@@ -389,11 +389,14 @@ function decodeUplink(input) {
 
 ## WiFi Configuration Portal
 
-On boot, the device creates a WiFi Access Point for 2 minutes:
+On boot, the device creates a WiFi Access Point for 20 minutes:
 
 - **SSID:** `ESP32-Modbus-Config`
 - **Password:** `modbus123`
-- **Web Interface:** http://192.168.4.1
+- **Web Interface:** https://192.168.4.1 (HTTPS with self-signed certificate)
+- **Authentication:** Username: `admin`, Password: `admin` (change immediately!)
+
+**Note:** Your browser will show a security warning due to the self-signed certificate. This is expected - click "Advanced" and proceed to accept the certificate.
 
 ### Web Interface Features
 
@@ -820,14 +823,18 @@ This code is intended for **development and testing** purposes. For production d
 
 ⚠️ **Current Implementation:**
 - Hard-coded WiFi AP credentials (`modbus123`)
-- Plain HTTP (no TLS)
+- HTTPS enabled with self-signed certificate (10-year validity)
 - WiFi password is logged to console
+- Known SSL library bug causing intermittent crashes
 
 ✅ **Security Features Implemented:**
 - ✅ HTTP Basic Authentication for web interface (default: admin/admin)
 - ✅ Credentials stored in NVS with ability to change via web UI
 - ✅ Authentication can be enabled/disabled per deployment
-- ✅ All endpoints protected with authentication checks
+- ✅ All endpoints protected with authentication checks (including SF6 control)
+- ✅ Input validation on SF6 values (client-side HTML5 + server-side range checks)
+- ✅ Thread-safe register updates with critical section protection
+- ✅ NVS persistence with proper error handling
 - ✅ Self-signed SSL certificate ready (10-year validity, mDNS support)
 
 ✅ **Additional Recommendations for Production:**
@@ -835,9 +842,49 @@ This code is intended for **development and testing** purposes. For production d
 2. Change default web authentication credentials on first boot
 3. Reduce AP timeout to minimum needed (or enable via physical button)
 4. Remove password from logs (if present in console output)
-5. Implement HTTPS (certificate ready - see `HTTPS_IMPLEMENTATION.md`)
+5. Replace HTTPS_Server_Generic library to fix SSL crash bug
 6. Add CSRF protection for configuration changes
 7. Enable mDNS for consistent access in STA mode (esp32-modbus.local)
+8. Add rate limiting on SF6 control endpoints (/sf6/update, /sf6/reset)
+9. Implement request throttling to prevent flash wear from excessive NVS writes
+10. Add audit logging for all SF6 value changes with timestamps
+11. Use production certificate signed by trusted CA (not self-signed)
+
+### Known SSL Library Vulnerability
+
+⚠️ **HTTPS_Server_Generic Library Bug (HIGH):**
+- **Issue:** Null pointer dereference in `SSL_write()` at ssl_lib.c:457
+- **Impact:** Device may reboot when responding to SF6 control requests
+- **Trigger:** Occurs during HTTPS response transmission (not during data processing)
+- **Data Safety:** ✅ SF6 values are saved to NVS BEFORE response is sent - no data loss
+- **Frequency:** Intermittent - does not happen on every request
+- **Mitigation:**
+  - User warned via yellow banner in web interface
+  - Critical data saved before potential crash point
+  - Consider replacing HTTPS_Server_Generic with esp_https_server
+  - Reduce request frequency to minimize crash probability
+
+**Error Details:**
+```
+Core 1 panic'ed (StoreProhibited). Exception was unhandled.
+PC: 0x420e2d59 in SSL_write at ssl_lib.c:457
+EXCVADDR: 0x00000038 (null pointer dereference)
+```
+
+**Why Values Are Safe:**
+```cpp
+// 1. Update values in critical section
+portENTER_CRITICAL(&timerMux);
+sf6_base_density = new_value;
+input_regs.sf6_density = raw_value;
+portEXIT_CRITICAL(&timerMux);
+
+// 2. Save to NVS immediately
+save_sf6_values();  // ✅ Completes successfully
+
+// 3. Send HTTP response (crash may occur here)
+res->setStatusCode(204);  // ⚠️ Crash point
+```
 
 ### Modbus Protocol
 
@@ -877,25 +924,35 @@ CONFIG_FREERTOS_CHECK_STACKOVERFLOW=2     # Stack Overflow Detection
 - Bounds checking on Modbus frame reception
 - CRC validation on incoming frames
 - Input validation on slave ID (1-247 range)
+- Input validation on SF6 control values (range checks)
+- Mutex protection for SF6 register updates (critical sections)
+- Client-side and server-side validation for web inputs
+- NVS storage with proper error handling
 
 ⚠️ **Additional Recommendations:**
-1. Add rate limiting on HTTP endpoints
-2. Validate all user inputs from web interface
-3. Add Content Security Policy headers
-4. Implement proper session management
-5. Add mutex protection for shared register access
+1. Add rate limiting on HTTP endpoints (especially SF6 control endpoints)
+2. Add Content Security Policy headers
+3. Implement proper session management with tokens
+4. Add CSRF protection for state-changing operations
+5. Implement request throttling to prevent abuse
 
 ### Vulnerability Summary
 
 | Risk Level | Issue | Status | Mitigation |
 |------------|-------|--------|------------|
 | HIGH | Hard-coded WiFi AP password | ⚠️ Open | Generate per-device passwords |
+| HIGH | SSL library crash vulnerability | ⚠️ Known Issue | HTTPS_Server_Generic bug (ssl_lib.c:457) - Data saved before crash |
 | MEDIUM | Default web credentials (admin/admin) | ⚠️ Partially Mitigated | Change on first boot, force password change |
-| MEDIUM | No Modbus authentication | ⚠️ Open | Physical security + monitoring |
+| MEDIUM | Self-signed certificate (MITM risk) | ⚠️ Accepted | Use CA-signed cert for production |
+| MEDIUM | No Modbus authentication | ⚠️ By Design | Physical security + monitoring |
 | MEDIUM | Password logged to console | ⚠️ Open | Remove or mask in logs |
-| LOW | No HTTPS | ⚠️ Open | Add self-signed cert |
+| MEDIUM | No rate limiting on SF6 endpoints | ⚠️ Open | Add request throttling |
+| MEDIUM | Flash wear from excessive NVS writes | ⚠️ Open | Implement write throttling |
 | LOW | No CSRF protection | ⚠️ Open | Add token validation |
 | ~~HIGH~~ | ~~Unauthenticated web config~~ | ✅ **Fixed v1.22** | HTTP Basic Auth implemented |
+| ~~MEDIUM~~ | ~~No HTTPS~~ | ✅ **Fixed v1.22** | Self-signed certificate deployed |
+| ~~MEDIUM~~ | ~~No input validation on web forms~~ | ✅ **Fixed v1.38** | Client + server-side validation |
+| ~~MEDIUM~~ | ~~Race conditions in register updates~~ | ✅ **Fixed v1.38** | Critical section protection added |
 
 For a detailed security review, see the analysis performed on this codebase.
 
