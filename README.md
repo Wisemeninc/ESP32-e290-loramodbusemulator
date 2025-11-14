@@ -43,6 +43,7 @@ Board: https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Me
   - Register 8: Quartz frequency (Hz)
   - **Dynamic emulation** with realistic sensor drift and noise
   - Values update every 3 seconds within realistic ranges
+  - **Manual control** via web interface with persistent storage (NVS)
 - **HW-519 RS485 module** with automatic flow control
 - **WiFi Access Point** for configuration (active for 20 minutes after boot)
   - SSID: `ESP32-Modbus-Config`
@@ -409,7 +410,14 @@ The web interface is organized into multiple tabs with HTTP Basic Authentication
    - Real-time view of all 12 holding registers and 9 input registers
    - Holding registers: values in decimal and hexadecimal
    - Input registers: raw values and scaled (engineering units)
-   - Auto-refreshes every 2 seconds
+   - **SF6 Manual Control Panel:**
+     - Set custom SF₆ density (0-60 kg/m³)
+     - Set custom SF₆ pressure (0-1100 kPa)
+     - Set custom SF₆ temperature (215-360 K)
+     - Reset to defaults button
+     - Values persist to flash storage (NVS)
+     - Client-side validation
+   - Auto-refreshes every 5 seconds
    - Complete register descriptions
 
 3. **Configuration Tab:**
@@ -758,24 +766,48 @@ Don't forget to update:
 
 ### Customize SF₆ Sensor Emulation
 
-Modify the emulation ranges and behavior in `sf6_sensor_emulation_task()`:
+#### Method 1: Web Interface (Recommended)
+
+Use the web interface at http://192.168.4.1/registers:
+1. Navigate to the "Registers" tab
+2. Use the **SF6 Manual Control** panel
+3. Enter desired values:
+   - Density: 0-60 kg/m³
+   - Pressure: 0-1100 kPa
+   - Temperature: 215-360 K
+4. Click "Update SF6 Values" to apply
+5. Or click "Reset to Defaults" to restore factory defaults
+
+**Note:** Values are automatically saved to flash (NVS) and persist across reboots. The emulation task adds small random drift around your set values for realistic behavior.
+
+#### Method 2: Modify Default Values in Code
+
+Edit `src/main.cpp` to change the default starting values:
 ```c
-// Base values for simulation (mid-range)
-float base_density = 25.0;        // Change starting point
-float base_pressure = 550.0;
-float base_temperature = 293.0;
-
-// Adjust ranges
-if (base_density < 15.0) base_density = 15.0;  // Min value
-if (base_density > 35.0) base_density = 35.0;  // Max value
-
-// Change update rate
-vTaskDelay(pdMS_TO_TICKS(3000)); // Update every 3 seconds (adjust as needed)
+// SF6 emulation base values (global so sliders can update them)
+float sf6_base_density = 25.0;       // kg/m3 - change default here
+float sf6_base_pressure = 550.0;     // kPa
+float sf6_base_temperature = 293.0;  // K
 ```
 
-To disable emulation and use static values, comment out the task creation:
+To adjust drift behavior, modify `update_input_registers()`:
 ```c
-// xTaskCreate(sf6_sensor_emulation_task, "sf6_emulation", 4096, NULL, 5, NULL);
+// Adjust drift magnitude
+sf6_base_density += random(-10, 11) / 100.0;     // ±0.10 kg/m³ per update
+sf6_base_pressure += random(-50, 51) / 10.0;     // ±5.0 kPa per update
+sf6_base_temperature += random(-5, 6) / 10.0;    // ±0.5 K per update
+
+// Adjust valid ranges
+sf6_base_density = constrain(sf6_base_density, 0.0, 60.0);
+sf6_base_pressure = constrain(sf6_base_pressure, 0.0, 1100.0);
+sf6_base_temperature = constrain(sf6_base_temperature, 215.0, 360.0);
+```
+
+To disable drift entirely (static values), comment out the drift lines:
+```c
+// sf6_base_density += random(-10, 11) / 100.0;     // Disabled
+// sf6_base_pressure += random(-50, 51) / 10.0;     // Disabled
+// sf6_base_temperature += random(-5, 6) / 10.0;    // Disabled
 ```
 
 ## Security Considerations

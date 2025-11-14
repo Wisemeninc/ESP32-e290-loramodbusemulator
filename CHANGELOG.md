@@ -1,5 +1,55 @@
 # Changelog - Vision Master E290 SF6 Monitor
 
+## Version 1.38 - SF6 Manual Control with NVS Persistence (2025-11-14)
+
+### Added
+- **SF6 Manual Control Panel** in /registers page
+  - Text input fields for Density (0-60 kg/m³), Pressure (0-1100 kPa), Temperature (215-360 K)
+  - "Update SF6 Values" button to save custom values
+  - "Reset to Defaults" button to restore factory settings (25.0, 550.0, 293.0)
+  - Client-side validation (HTML5 + JavaScript)
+  - Server-side validation and range checking
+- **NVS Persistence for SF6 Values**
+  - `load_sf6_values()` - Loads saved values at startup
+  - `save_sf6_values()` - Saves values to flash immediately
+  - Values survive reboots, power cycles, and crashes
+  - NVS namespace: "sf6" with keys: density, pressure, temperature, has_values
+- **Two new HTTPS endpoints:**
+  - `GET /sf6/update` - Updates SF6 base values with query parameters
+  - `GET /sf6/reset` - Resets SF6 values to factory defaults
+- **Enhanced logging** for SF6 operations with serial debug output
+
+### Changed
+- **SF6 emulation system** now uses persistent base values from NVS
+- **Register page auto-refresh** changed from 2 to 5 seconds
+- **HTTP response** changed from GIF/JSON to 204 No Content (more stable)
+- **Critical sections** protect SF6 register updates from race conditions
+
+### Fixed
+- SF6 values now persist across reboots (previously volatile)
+- Reset button now properly updates input registers immediately
+
+### Known Issues
+- **SSL library bug** in HTTPS_Server_Generic may cause occasional device reboots
+  - Error: Core 1 panic (StoreProhibited) in SSL_write at ssl_lib.c:457
+  - Crash occurs AFTER values are saved, so data is not lost
+  - User warned via yellow banner in web interface
+  - Workaround: Single-click submission (not continuous updates)
+
+### Technical Details
+- **Global variables:** `sf6_base_density`, `sf6_base_pressure`, `sf6_base_temperature`
+- **Thread safety:** `portENTER_CRITICAL`/`portEXIT_CRITICAL` mutex protection
+- **Update frequency:** Drift added every 3 seconds via `update_input_registers()`
+- **Drift magnitude:** ±0.10 kg/m³, ±5.0 kPa, ±0.5 K per update
+- **Valid ranges:** 0-60 kg/m³, 0-1100 kPa, 215-360 K (enforced by constrain)
+
+### Version History (v1.34 - v1.38)
+- **v1.34:** Initial text input implementation (replaced sliders)
+- **v1.35:** Changed to 204 No Content response with warning message
+- **v1.36:** Added NVS persistence functions
+- **v1.37:** Added reset button for defaults
+- **v1.38:** Added debug logging to SF6 reset handler
+
 ## Version 1.22 - Web Interface Authentication (2025-11-12)
 
 ### Added

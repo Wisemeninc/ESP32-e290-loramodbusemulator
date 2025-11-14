@@ -19,27 +19,27 @@ The device emulates an industrial sensor that exposes system metrics and simulat
 
 ```bash
 # Build for Vision Master E290
-platformio run -e heltec_vision_master_e290
+platformio run -e vision-master-e290-arduino
 
 # Upload firmware
-platformio run -e heltec_vision_master_e290 --target upload
+platformio run -e vision-master-e290-arduino --target upload
 
 # Monitor serial output (115200 baud)
-platformio run -e heltec_vision_master_e290 --target monitor
+platformio run -e vision-master-e290-arduino --target monitor
 
 # Combined upload and monitor
-platformio run -e heltec_vision_master_e290 --target upload --target monitor
+platformio run -e vision-master-e290-arduino --target upload --target monitor
 
 # Clean build
-platformio run -e heltec_vision_master_e290 -t clean
+platformio run -e vision-master-e290-arduino -t clean
 ```
 
 ### Build System Notes
-- Uses **PlatformIO** with ESP-IDF framework
-- Source directory is `main/` (not `src/`)
-- CMake component registration in `main/CMakeLists.txt`
-- Platform-specific configs in `sdkconfig.defaults`
-- Board-specific overrides in `sdkconfig.heltec_vision_master_e290`
+- Uses **PlatformIO** with Arduino framework (NOT ESP-IDF)
+- Source directory is `src/` (contains main.cpp)
+- Environment name: `vision-master-e290-arduino`
+- Correct build command: `platformio run -e vision-master-e290-arduino`
+- Firmware version tracked in main.cpp as FIRMWARE_VERSION define
 
 ## Hardware Architecture
 
@@ -84,17 +84,12 @@ platformio run -e heltec_vision_master_e290 -t clean
 ### Main Components
 
 ```
-main/
-├── main.c              - Entry point, Modbus slave, WiFi AP, web server
-├── lorawan.c           - LoRaWAN framework (stub implementation)
-├── lorawan.h           - LoRaWAN interface
-├── lorawan_config.h    - LoRaWAN credentials and config
-├── display.c           - E-Ink display driver and rendering
-├── display.h           - Display interface
-├── eink_driver.c       - Low-level E-Ink SPI communication
-├── eink_driver.h       - E-Ink driver interface
-└── eink_pin_test.h     - Pin testing utilities
+src/
+└── main.cpp            - Entire application (Modbus slave, WiFi, HTTPS server,
+                          LoRaWAN framework, E-Ink display, SF6 emulation)
 ```
+
+**Note:** The project was converted to Arduino framework. All functionality is now in a single `main.cpp` file using Arduino libraries.
 
 ### Key Data Structures
 
@@ -195,6 +190,58 @@ The firmware runs multiple FreeRTOS tasks:
 - Byte 0: Message type (0x03 = both register types)
 - Bytes 1-10: Holding register subset (counter, uptime, heap, temp, WiFi)
 - Bytes 11-18: Input register subset (SF₆ data)
+
+### SF6 Manual Control System
+
+**Web Interface Controls (Added in v1.34-1.38):**
+Located in `/registers` page, the SF6 Manual Control panel allows users to override sensor emulation with custom values.
+
+**Features:**
+- Three text input fields for Density, Pressure, Temperature
+- Real-time client-side validation (HTML5 + JavaScript)
+- Server-side validation and range checking
+- Two buttons:
+  - "Update SF6 Values" - Saves custom values
+  - "Reset to Defaults" - Restores factory defaults (25.0 kg/m³, 550.0 kPa, 293.0 K)
+- Confirmation dialog on reset
+- Success/error status messages
+- Auto-reload after 2 seconds
+
+**Persistence:**
+- Values saved to NVS flash storage (namespace: "sf6")
+- Keys: "density" (float), "pressure" (float), "temperature" (float), "has_values" (bool)
+- Loaded at startup in `setup()` via `load_sf6_values()`
+- Saved immediately when updated via `save_sf6_values()`
+- Survives reboots, power cycles, and crashes
+
+**Backend Handlers:**
+- `/sf6/update` - GET endpoint with query parameters (density, pressure, temperature as raw values)
+- `/sf6/reset` - GET endpoint to restore defaults
+- Both use HTTP 204 No Content response (no body, more stable)
+- Both protected by critical sections (`portENTER_CRITICAL`/`portEXIT_CRITICAL`)
+- Both update global variables AND input registers immediately
+
+**Known Issues:**
+- SSL bug in HTTPS_Server_Generic library may cause occasional reboots (ssl_lib.c:457 null pointer dereference)
+- Values are saved BEFORE response is sent, so data persists even if crash occurs
+- User is warned via yellow banner in web interface
+
+**Global Variables:**
+```cpp
+float sf6_base_density = 25.0;       // kg/m3
+float sf6_base_pressure = 550.0;     // kPa
+float sf6_base_temperature = 293.0;  // K
+```
+
+**NVS Functions:**
+- `load_sf6_values()` - Loads from NVS at startup (src/main.cpp:2857)
+- `save_sf6_values()` - Saves to NVS on update (src/main.cpp:2882)
+
+**Emulation Behavior:**
+- `update_input_registers()` runs every 3 seconds
+- Adds small random drift to base values (±0.10 kg/m³, ±5.0 kPa, ±0.5 K)
+- Constrains to valid ranges (0-60 kg/m³, 0-1100 kPa, 215-360 K)
+- Manual values persist through drift - drift is applied on top of user-set base values
 
 ## Development Workflow
 
