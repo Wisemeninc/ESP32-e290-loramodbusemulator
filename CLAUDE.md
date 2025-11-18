@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an ESP-IDF project for the **Heltec Vision Master E290** (ESP32-S3R8) that implements a Modbus RTU slave device with:
-- RS485 communication via HW-519 module
+This is an ESP-IDF project for the **Heltec Vision Master E290** (ESP32-S3R8) that implements a Modbus RTU/TCP slave device with:
+- **Modbus RTU** communication via RS485 (HW-519 module)
+- **Modbus TCP** communication via WiFi (configurable, disabled by default)
 - 2.9" E-Ink display (296×128 pixels)
 - LoRaWAN transmission capability (SX1262)
-- WiFi configuration portal
+- WiFi configuration portal (HTTPS)
 - SF₆ gas sensor emulation
 
-The device emulates an industrial sensor that exposes system metrics and simulated SF₆ gas data over Modbus RTU, displays data on E-Ink, and can transmit over LoRaWAN.
+The device emulates an industrial sensor that exposes system metrics and simulated SF₆ gas data over both Modbus RTU (RS485) and Modbus TCP (WiFi), displays data on E-Ink, and can transmit over LoRaWAN.
 
 ## Build System
 
@@ -139,11 +140,29 @@ The firmware runs multiple FreeRTOS tasks:
 
 ### Modbus Implementation
 
-- Uses ESP-IDF `esp-modbus` component
+**Modbus RTU (RS485):**
+- Uses `modbus-esp8266` library (ModbusRTU class)
 - Function codes supported: 0x03 (read holding), 0x04 (read input), 0x06 (write single)
 - Baud rate: 9600, 8-N-1
 - Slave address: Configurable via WiFi portal (default 1, range 1-247)
-- Register access handled via callbacks in main.c
+- Register access handled via callbacks in modbus_handler.cpp
+- Statistics tracked: requests, reads, writes, errors
+
+**Modbus TCP (WiFi):**
+- Uses `modbus-esp8266` library (ModbusIP class)
+- Port: 502 (standard Modbus TCP port)
+- **Disabled by default** - Enable via web configuration page
+- Requires device restart after enabling/disabling
+- Shares register data with RTU (synchronized every 5 seconds)
+- Works in both AP mode (192.168.4.1) and client mode (assigned IP)
+- Settings saved to NVS (non-volatile storage)
+
+**Register Synchronization:**
+- RTU registers are the source of truth
+- TCP registers synchronized every 5 seconds from RTU
+- Both protocols provide identical data
+- Static registers (serial, version) set at startup
+- Dynamic registers (uptime, heap, SF6) updated every 2-3 seconds
 
 ### WiFi Configuration Portal
 
@@ -247,6 +266,7 @@ float sf6_base_temperature = 293.0;  // K
 
 ### Testing Modbus Communication
 
+**Modbus RTU (RS485):**
 ```bash
 # Using mbpoll (command line)
 mbpoll -a 1 -0 -r 0 -c 12 -t 4 -b 9600 -P none -s 1 /dev/ttyUSB0
@@ -255,6 +275,23 @@ mbpoll -a 1 -0 -r 0 -c 12 -t 4 -b 9600 -P none -s 1 /dev/ttyUSB0
 from pymodbus.client.sync import ModbusSerialClient
 client = ModbusSerialClient(method='rtu', port='/dev/ttyUSB0', baudrate=9600)
 result = client.read_holding_registers(address=0, count=12, unit=1)
+```
+
+**Modbus TCP (WiFi):**
+```bash
+# Read holding registers (function code 4)
+mbpoll 192.168.4.1 -a 1 -0 -r 0 -c 12 -t 4
+
+# Read input registers (function code 3)
+mbpoll 192.168.4.1 -a 1 -0 -r 0 -c 9 -t 3
+
+# Using Python pymodbus
+from pymodbus.client import ModbusTcpClient
+client = ModbusTcpClient('192.168.4.1', port=502)
+client.connect()
+result = client.read_holding_registers(address=0, count=12, slave=1)
+print(result.registers)
+client.close()
 ```
 
 ### Common Development Tasks

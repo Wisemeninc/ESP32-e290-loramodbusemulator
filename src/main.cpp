@@ -17,9 +17,18 @@
 #include <HTTPResponse.hpp>
 #include <Preferences.h>
 #include <ModbusRTU.h>
+#include <ModbusIP_ESP8266.h>
 #include <RadioLib.h>
 #include "mbedtls/base64.h"
 #include "server_cert.h"
+
+// Component headers (Gradual Integration - Phase 1)
+#include "config.h"
+#include "modbus_handler.h"
+#include "wifi_manager.h"
+#include "auth_manager.h"
+#include "display_manager.h"
+#include "lorawan_handler.h"
 
 // ============================================================================
 // DISPLAY SETUP
@@ -39,9 +48,9 @@
 
 // Firmware version configuration
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
+// FIRMWARE_VERSION now defined in config.h (Phase 1 integration)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 143  // v1.43 - Updated README: WiFi SSID dynamic with MAC, password modes clarified
 
 // E-Ink display for Vision Master E290
 EInkDisplay_VisionMasterE290 display;
@@ -59,39 +68,22 @@ EInkDisplay_VisionMasterE290 display;
 // Modbus RTU instance
 ModbusRTU mb;
 
-// Statistics
+// Modbus TCP instance
+ModbusIP mbTCP;
+
+// Statistics (combined for both RTU and TCP)
 uint32_t modbus_request_count = 0;
 uint32_t modbus_read_count = 0;
 uint32_t modbus_write_count = 0;
 uint32_t modbus_error_count = 0;
+uint32_t modbus_tcp_request_count = 0;
+uint32_t modbus_tcp_clients = 0;
 
-// Modbus registers
-struct HoldingRegisters {
-    uint16_t sequential_counter;
-    uint16_t random_number;
-    uint16_t uptime_seconds;
-    uint16_t free_heap_kb_low;
-    uint16_t free_heap_kb_high;
-    uint16_t min_heap_kb;
-    uint16_t cpu_freq_mhz;
-    uint16_t task_count;
-    uint16_t temperature_x10;
-    uint16_t cpu_cores;
-    uint16_t wifi_enabled;
-    uint16_t wifi_clients;
-} holding_regs;
-
-struct InputRegisters {
-    uint16_t sf6_density;           // kg/m3 x 100
-    uint16_t sf6_pressure_20c;      // kPa x 10
-    uint16_t sf6_temperature;       // K x 10
-    uint16_t sf6_pressure_var;      // kPa x 10
-    uint16_t slave_id;
-    uint16_t serial_hi;
-    uint16_t serial_lo;
-    uint16_t sw_release;
-    uint16_t quartz_freq;
-} input_regs;
+// Modbus registers - using component definitions (Phase 2 integration)
+// Structs now defined in modbus_handler.h
+// Keep local variables for compatibility with existing code
+HoldingRegisters holding_regs;
+InputRegisters input_regs;
 
 // SF6 emulation base values (global so sliders can update them)
 float sf6_base_density = 25.0;       // kg/m3
@@ -158,10 +150,11 @@ HTTPServer redirectServer = HTTPServer(80);
 Preferences preferences;
 
 uint8_t modbus_slave_id = MB_SLAVE_ID_DEFAULT;
+bool modbus_tcp_enabled = false;  // Modbus TCP enable flag (default: disabled)
 bool wifi_ap_active = false;
 bool wifi_client_connected = false;
 unsigned long wifi_start_time = 0;
-const unsigned long WIFI_TIMEOUT_MS = 20 * 60 * 1000;  // 20 minutes
+// WIFI_TIMEOUT_MS now defined in config.h (Phase 1 integration)
 char wifi_password[17] = "modbus123";  // WiFi AP password (16 chars + null terminator)
 
 // WiFi Client Configuration
@@ -181,16 +174,12 @@ bool debug_auth_enabled = false;   // Enable/disable authentication debug loggin
 // FUNCTION DECLARATIONS
 // ============================================================================
 
-void setup_display();
-void setup_wifi_ap();
+// Old component setup functions removed - now using component classes
 void setup_web_server();
 void setup_redirect_server();
-void setup_modbus();
-void setup_lorawan();
+void sync_tcp_registers();
 void update_holding_registers();
 void update_input_registers();
-void update_display();
-void send_lorawan_uplink();
 void handle_root(HTTPRequest * req, HTTPResponse * res);
 void handle_stats(HTTPRequest * req, HTTPResponse * res);
 void handle_registers(HTTPRequest * req, HTTPResponse * res);
@@ -201,25 +190,15 @@ void handle_lorawan(HTTPRequest * req, HTTPResponse * res);
 void handle_lorawan_config(HTTPRequest * req, HTTPResponse * res);
 void handle_wifi(HTTPRequest * req, HTTPResponse * res);
 void handle_reboot(HTTPRequest * req, HTTPResponse * res);
-void load_lorawan_credentials();
-void save_lorawan_credentials();
-void generate_lorawan_credentials();
-void print_lorawan_credentials();
-void save_lorawan_session();
-void load_lorawan_session();
-void generate_wifi_password();
-void load_wifi_password();
-void save_wifi_password();
-void load_wifi_client_credentials();
-void save_wifi_client_credentials();
-void load_sf6_values();
-void save_sf6_values();
-bool setup_wifi_client();
+// Old credential/config functions removed - now in component classes
+void load_wifi_client_credentials();  // Still used for web handler compatibility
+void save_wifi_client_credentials();  // Still used for web handler compatibility
+void load_sf6_values();  // SF6 specific - not in components yet
+void save_sf6_values();  // SF6 specific - not in components yet
 void handle_wifi_scan(HTTPRequest * req, HTTPResponse * res);
 void handle_wifi_connect(HTTPRequest * req, HTTPResponse * res);
 void handle_wifi_status(HTTPRequest * req, HTTPResponse * res);
-void load_auth_credentials();
-void save_auth_credentials();
+void save_auth_credentials();  // Still used for web handler
 String readPostBody(HTTPRequest * req);
 bool getPostParameterFromBody(const String& body, const char* name, String& value);
 bool getPostParameter(HTTPRequest * req, const char* name, String& value);
@@ -228,11 +207,8 @@ void handle_security(HTTPRequest * req, HTTPResponse * res);
 void handle_security_update(HTTPRequest * req, HTTPResponse * res);
 void handle_debug_update(HTTPRequest * req, HTTPResponse * res);
 void handle_enable_auth(HTTPRequest * req, HTTPResponse * res);
+void handle_factory_reset(HTTPRequest * req, HTTPResponse * res);
 void handle_http_redirect(HTTPRequest * req, HTTPResponse * res);
-void display_password_on_screen(const char* ssid);
-void draw_char(int x, int y, char c, int scale);
-void draw_text(int x, int y, const char* text, int scale);
-void draw_number(int x, int y, float value, int decimals, int scale);
 
 // Modbus callbacks
 uint16_t cb_read_holding_register(TRegister* reg, uint16_t val);
@@ -248,7 +224,7 @@ void setup() {
     delay(1000);
 
     Serial.println("\n\n========================================");
-    Serial.println("Vision Master E290 - Modbus RTU Slave");
+    Serial.println("Vision Master E290 - Modbus RTU/TCP");
     Serial.println("========================================");
     Serial.println("Framework: Arduino");
     Serial.println("Display: 2.9\" E-Ink (296x128)");
@@ -257,47 +233,71 @@ void setup() {
     // Initialize preferences (NVS)
     preferences.begin("modbus", false);
     modbus_slave_id = preferences.getUChar("slave_id", MB_SLAVE_ID_DEFAULT);
+    modbus_tcp_enabled = preferences.getBool("tcp_enabled", false);  // Default: disabled
     Serial.printf("Modbus Slave ID: %d\n", modbus_slave_id);
+    Serial.printf("Modbus TCP: %s\n", modbus_tcp_enabled ? "Enabled" : "Disabled");
     preferences.end();  // Close modbus namespace
 
-    // Load authentication credentials
+    // Load authentication credentials - Phase 6 integration
     Serial.println("\n>>> Loading authentication credentials...");
-    load_auth_credentials();
+    // Old: load_auth_credentials();
+    authManager.begin();
+    auth_enabled = authManager.isEnabled();  // Update global for web handler compatibility
     Serial.printf("Authentication: %s\n", auth_enabled ? "Enabled" : "Disabled");
 
     // Load SF6 base values from NVS
     Serial.println("\n>>> Loading SF6 base values...");
     load_sf6_values();
 
-    // Load or generate LoRaWAN credentials
-    Serial.println("\n>>> Loading LoRaWAN credentials...");
-    load_lorawan_credentials();
-
-    // Print credentials to console for registration with network server
-    Serial.println(">>> Printing LoRaWAN credentials...");
-    print_lorawan_credentials();
-
-    // Initialize LoRaWAN FIRST (before E-Ink display)
+    // Initialize LoRaWAN FIRST (before E-Ink display) - Phase 4 integration
     // This ensures LoRa radio gets clean SPI access
     // E-Ink will be initialized AFTER join completes to avoid SPI conflicts during RX
-    setup_lorawan();
+    Serial.println("\n>>> Loading LoRaWAN credentials...");
+    // Old: load_lorawan_credentials(); print_lorawan_credentials(); setup_lorawan();
+    lorawanHandler.loadCredentials();
+    Serial.println(">>> Printing LoRaWAN credentials...");
+    lorawanHandler.printCredentials();
+    lorawanHandler.begin();
+    lorawan_joined = lorawanHandler.join();  // Update global for web handler compatibility
 
-    // Now safe to initialize E-Ink display after join attempt completes
+    // Send a test uplink immediately after successful join
+    if (lorawan_joined) {
+        Serial.println("\n>>> Sending immediate test uplink after join...");
+        delay(1000);  // Brief delay to ensure join is fully processed
+        update_input_registers();  // Update sensor data before uplink
+        lorawanHandler.sendUplink(input_regs);
+    }
+
+    // Now safe to initialize E-Ink display after join attempt completes - Phase 5 integration
     // The join process (TX + RX windows) is finished, SPI can be shared
-    setup_display();
+    // Old: setup_display();
+    displayManager.begin(DISPLAY_ROTATION);
+    displayManager.showStartupScreen();
 
-    // Initialize WiFi - try client mode first, fall back to AP if needed
+    // Initialize WiFi (Phase 3 integration) - try client mode first, fall back to AP if needed
     Serial.println("\n>>> Loading WiFi client credentials...");
+    // Keep old credential loading for web handler compatibility (Phase 8 will replace)
     load_wifi_client_credentials();
+
+    // Initialize WiFi Manager
+    wifiManager.begin();
 
     bool client_connected = false;
     if (strlen(wifi_client_ssid) > 0) {
-        client_connected = setup_wifi_client();
+        // Old: client_connected = setup_wifi_client();
+        client_connected = wifiManager.connectClient(wifi_client_ssid, wifi_client_password);
+        wifi_client_connected = client_connected;
     }
 
     // If client mode failed or not configured, start AP mode
     if (!client_connected) {
-        setup_wifi_ap();
+        // Old: setup_wifi_ap();
+        wifiManager.startAP();
+        wifi_ap_active = wifiManager.isAPActive();
+
+        // Copy AP password to global variable for web handler compatibility
+        String ap_pass_str = wifiManager.getAPPassword();
+        strcpy(wifi_password, ap_pass_str.c_str());
     } else {
         Serial.println(">>> WiFi client connected - AP mode disabled");
     }
@@ -305,8 +305,26 @@ void setup() {
     setup_web_server();
     setup_redirect_server();
 
-    // Initialize Modbus
-    setup_modbus();
+    // Initialize Modbus RTU (Phase 2 integration)
+    // Old: setup_modbus();
+    modbusHandler.begin(modbus_slave_id);
+
+    // Initialize Modbus TCP (if enabled)
+    if (modbus_tcp_enabled) {
+        Serial.println("\n>>> Initializing Modbus TCP...");
+        mbTCP.server();  // Start Modbus TCP server on port 502
+        Serial.println(">>> Modbus TCP server started on port 502");
+        Serial.printf(">>> Modbus TCP accessible at: ");
+        if (wifi_client_connected) {
+            Serial.println(WiFi.localIP());
+        } else if (wifi_ap_active) {
+            Serial.println(WiFi.softAPIP());
+        } else {
+            Serial.println("(WiFi not connected)");
+        }
+    } else {
+        Serial.println("\n>>> Modbus TCP is disabled (enable in web configuration)");
+    }
 
     // Initialize registers with default values
     holding_regs.sequential_counter = 0;
@@ -317,16 +335,55 @@ void setup() {
     uint8_t mac[6];
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 
-    input_regs.slave_id = modbus_slave_id;
+    // Set static input register values in the ModbusHandler
+    InputRegisters& handler_input_regs = modbusHandler.getInputRegisters();
+    handler_input_regs.slave_id = modbus_slave_id;
     // Use last 4 bytes of MAC address as 32-bit serial number
-    input_regs.serial_hi = (mac[2] << 8) | mac[3];
-    input_regs.serial_lo = (mac[4] << 8) | mac[5];
-    input_regs.sw_release = FIRMWARE_VERSION;
-    input_regs.quartz_freq = 14750;  // 147.50 Hz
+    handler_input_regs.serial_hi = (mac[2] << 8) | mac[3];
+    handler_input_regs.serial_lo = (mac[4] << 8) | mac[5];
+    handler_input_regs.sw_release = FIRMWARE_VERSION;
+    handler_input_regs.quartz_freq = 14750;  // 147.50 Hz
+
+    // Also update local copy for compatibility
+    input_regs = handler_input_regs;
 
     Serial.printf("Device Serial Number: 0x%04X%04X (from MAC: %02X:%02X:%02X:%02X:%02X:%02X)\n",
-                  input_regs.serial_hi, input_regs.serial_lo,
+                  handler_input_regs.serial_hi, handler_input_regs.serial_lo,
                   mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+
+    // Initialize Modbus TCP registers (shared with RTU) - only if TCP is enabled
+    if (modbus_tcp_enabled) {
+        // Add holding registers individually (0-11)
+        Serial.println("\n>>> Adding Modbus TCP holding registers...");
+        for (int i = 0; i < 12; i++) {
+            mbTCP.addHreg(i);  // Add each holding register individually
+        }
+
+        // Add input registers individually (0-8)
+        Serial.println(">>> Adding Modbus TCP input registers...");
+        for (int i = 0; i < 9; i++) {
+            mbTCP.addIreg(i);  // Add each input register individually
+        }
+        Serial.println(">>> Modbus TCP registers initialized");
+
+        // Perform initial sync of register values
+        Serial.println(">>> Performing initial TCP register sync...");
+        sync_tcp_registers();
+
+        // Verify input registers after sync
+        Serial.println(">>> Verifying input register values:");
+        InputRegisters& test_input = modbusHandler.getInputRegisters();
+        Serial.printf("  [0] sf6_density: %u\n", test_input.sf6_density);
+        Serial.printf("  [1] sf6_pressure_20c: %u\n", test_input.sf6_pressure_20c);
+        Serial.printf("  [2] sf6_temperature: %u\n", test_input.sf6_temperature);
+        Serial.printf("  [3] sf6_pressure_var: %u\n", test_input.sf6_pressure_var);
+        Serial.printf("  [4] slave_id: %u\n", test_input.slave_id);
+        Serial.printf("  [5] serial_hi: %u\n", test_input.serial_hi);
+        Serial.printf("  [6] serial_lo: %u\n", test_input.serial_lo);
+        Serial.printf("  [7] sw_release: %u\n", test_input.sw_release);
+        Serial.printf("  [8] quartz_freq: %u\n", test_input.quartz_freq);
+        Serial.println(">>> Initial sync complete");
+    }
 
     Serial.println("Initialization complete!\n");
 }
@@ -340,6 +397,7 @@ void loop() {
     static unsigned long last_display_update = 0;
     static unsigned long last_sf6_update = 0;
     static unsigned long last_lorawan_uplink = 0;
+    static unsigned long last_tcp_sync = 0;
 
     unsigned long now = millis();
 
@@ -355,16 +413,35 @@ void loop() {
         update_input_registers();
     }
 
-    // Update display every 30 seconds
-    if (now - last_display_update >= 30000) {
-        last_display_update = now;
-        update_display();
+    // Sync TCP registers every 5 seconds (less frequent to reduce load)
+    if (modbus_tcp_enabled && (now - last_tcp_sync >= 5000)) {
+        last_tcp_sync = now;
+        sync_tcp_registers();
     }
 
-    // Send LoRaWAN uplink every 5 minutes (if joined)
+    // Update display every 30 seconds - Phase 5 integration
+    if (now - last_display_update >= 30000) {
+        last_display_update = now;
+        // Old: update_display();
+        displayManager.update(
+            holding_regs,
+            input_regs,
+            wifi_ap_active,
+            wifi_client_connected,
+            modbus_slave_id,
+            lorawan_joined,
+            lorawanHandler.getUplinkCount(),
+            lorawanHandler.getLastRSSI(),
+            lorawanHandler.getLastSNR(),
+            lorawanHandler.getDevEUI()
+        );
+    }
+
+    // Send LoRaWAN uplink every 5 minutes (if joined) - Phase 4 integration
     if (lorawan_joined && (now - last_lorawan_uplink >= 300000)) {
         last_lorawan_uplink = now;
-        send_lorawan_uplink();
+        // Old: send_lorawan_uplink();
+        lorawanHandler.sendUplink(input_regs);
     }
 
     // Handle WiFi AP timeout (only if not connected as client)
@@ -375,18 +452,26 @@ void loop() {
         wifi_ap_active = false;
     }
 
-    // Update WiFi client connection status
+    // Update WiFi client connection status (Phase 3 integration)
     if (wifi_client_connected) {
         if (WiFi.status() != WL_CONNECTED) {
             Serial.println("WiFi client disconnected - attempting reconnect...");
             wifi_client_connected = false;
             // Try to reconnect
-            if (setup_wifi_client()) {
+            // Old: if (setup_wifi_client())
+            if (wifiManager.connectClient(wifi_client_ssid, wifi_client_password)) {
                 Serial.println("WiFi client reconnected");
+                wifi_client_connected = true;
             } else {
                 // Reconnection failed - start AP mode
                 Serial.println("WiFi client reconnection failed - starting AP mode");
-                setup_wifi_ap();
+                // Old: setup_wifi_ap();
+                wifiManager.startAP();
+                wifi_ap_active = wifiManager.isAPActive();
+
+                // Copy AP password to global variable
+                String ap_pass_str = wifiManager.getAPPassword();
+                strcpy(wifi_password, ap_pass_str.c_str());
             }
         }
     }
@@ -397,8 +482,16 @@ void loop() {
         redirectServer.loop();
     }
 
-    // Handle Modbus requests
-    mb.task();
+    // Handle Modbus RTU requests (Phase 2 integration)
+    // Old: mb.task();
+    modbusHandler.task();
+
+    // Handle Modbus TCP requests (only if enabled)
+    if (modbus_tcp_enabled && (wifi_ap_active || wifi_client_connected)) {
+        mbTCP.task();
+        yield();  // Allow other tasks after TCP processing
+    }
+
     yield();  // Allow other tasks to run
 
     delay(10);
@@ -408,294 +501,57 @@ void loop() {
 // DISPLAY FUNCTIONS
 // ============================================================================
 
-void setup_display() {
-    Serial.println("Initializing E-Ink display...");
-
-    // The Heltec library handles VextOn() and pin setup automatically
-    // Set display rotation using configured value
-    display.setRotation(DISPLAY_ROTATION);
-
-    // Show startup screen with simple graphics (inverted colors)
-    display.clear();
-
-    // Fill background black
-    display.fillRect(0, 0, 296, 128, BLACK);
-
-    // Draw border (white)
-    display.drawRect(0, 0, 296, 128, WHITE);
-
-    // Draw title box
-    display.drawLine(0, 30, 295, 30, WHITE);
-
-    // Draw some rectangles to show it's working (white on black)
-    display.fillRect(10, 40, 50, 20, WHITE);  // Filled box
-    display.drawRect(70, 40, 50, 20, WHITE);  // Outline box
-    display.fillRect(130, 40, 50, 20, WHITE); // Filled box
-
-    // Draw diagonal lines in bottom area
-    display.drawLine(10, 70, 60, 110, WHITE);
-    display.drawLine(70, 70, 120, 110, WHITE);
-    display.drawLine(130, 70, 180, 110, WHITE);
-
-    display.update();
-
-    Serial.println("E-Ink display initialized!");
-    Serial.println("Display shows: Border, boxes, and diagonal lines");
-}
 
 // Simple 5x7 font for letters and digits
-const uint8_t font5x7[][5] = {
-    {0x3E, 0x51, 0x49, 0x45, 0x3E}, // 0
-    {0x00, 0x42, 0x7F, 0x40, 0x00}, // 1
-    {0x42, 0x61, 0x51, 0x49, 0x46}, // 2
-    {0x21, 0x41, 0x45, 0x4B, 0x31}, // 3
-    {0x18, 0x14, 0x12, 0x7F, 0x10}, // 4
-    {0x27, 0x45, 0x45, 0x45, 0x39}, // 5
-    {0x3C, 0x4A, 0x49, 0x49, 0x30}, // 6
-    {0x01, 0x71, 0x09, 0x05, 0x03}, // 7
-    {0x36, 0x49, 0x49, 0x49, 0x36}, // 8
-    {0x06, 0x49, 0x49, 0x29, 0x1E}, // 9
-    {0x7E, 0x11, 0x11, 0x11, 0x7E}, // A (index 10)
-    {0x7F, 0x49, 0x49, 0x49, 0x36}, // B
-    {0x3E, 0x41, 0x41, 0x41, 0x22}, // C
-    {0x7F, 0x41, 0x41, 0x22, 0x1C}, // D
-    {0x7F, 0x49, 0x49, 0x49, 0x41}, // E
-    {0x7F, 0x09, 0x09, 0x09, 0x01}, // F
-    {0x3E, 0x41, 0x49, 0x49, 0x7A}, // G
-    {0x7F, 0x08, 0x08, 0x08, 0x7F}, // H
-    {0x00, 0x41, 0x7F, 0x41, 0x00}, // I
-    {0x20, 0x40, 0x41, 0x3F, 0x01}, // J
-    {0x7F, 0x08, 0x14, 0x22, 0x41}, // K
-    {0x7F, 0x40, 0x40, 0x40, 0x40}, // L
-    {0x7F, 0x02, 0x0C, 0x02, 0x7F}, // M
-    {0x7F, 0x04, 0x08, 0x10, 0x7F}, // N
-    {0x3E, 0x41, 0x41, 0x41, 0x3E}, // O
-    {0x7F, 0x09, 0x09, 0x09, 0x06}, // P
-    {0x3E, 0x41, 0x51, 0x21, 0x5E}, // Q
-    {0x7F, 0x09, 0x19, 0x29, 0x46}, // R
-    {0x46, 0x49, 0x49, 0x49, 0x31}, // S
-    {0x01, 0x01, 0x7F, 0x01, 0x01}, // T
-    {0x3F, 0x40, 0x40, 0x40, 0x3F}, // U
-    {0x1F, 0x20, 0x40, 0x20, 0x1F}, // V
-    {0x3F, 0x40, 0x38, 0x40, 0x3F}, // W
-    {0x63, 0x14, 0x08, 0x14, 0x63}, // X
-    {0x07, 0x08, 0x70, 0x08, 0x07}, // Y
-    {0x61, 0x51, 0x49, 0x45, 0x43}, // Z
-    {0x00, 0x00, 0x00, 0x00, 0x00}, // Space (index 36)
-    {0x00, 0x00, 0x60, 0x60, 0x00}, // . (period)
-    {0x00, 0x36, 0x36, 0x00, 0x00}, // : (colon)
-    {0x08, 0x08, 0x08, 0x08, 0x08}, // - (minus/hyphen, index 39)
-};
-
-void draw_char(int x, int y, char c, int scale = 1) {
-    int index = -1;
-    if (c >= '0' && c <= '9') {
-        index = c - '0';
-    } else if (c >= 'A' && c <= 'Z') {
-        index = c - 'A' + 10;
-    } else if (c >= 'a' && c <= 'z') {
-        index = c - 'a' + 10;  // Same as uppercase
-    } else if (c == ' ') {
-        index = 36;
-    } else if (c == '.') {
-        index = 37;
-    } else if (c == ':') {
-        index = 38;
-    } else if (c == '-') {
-        index = 39;
-    }
-
-    if (index >= 0 && index < 40) {
-        for (int col = 0; col < 5; col++) {
-            uint8_t line = font5x7[index][col];
-            for (int row = 0; row < 7; row++) {
-                if (line & (1 << row)) {
-                    // Draw scaled pixel (scale x scale rectangle)
-                    display.fillRect(x + col * scale, y + row * scale, scale, scale, WHITE);
-                }
-            }
-        }
-    }
-}
-
-void draw_text(int x, int y, const char* text, int scale = 1) {
-    int cursor_x = x;
-    for (int i = 0; text[i] != '\0'; i++) {
-        draw_char(cursor_x, y, text[i], scale);
-        cursor_x += (5 * scale) + scale;  // 5 pixels wide * scale + spacing
-    }
-}
-
-void draw_number(int x, int y, float value, int decimals, int scale = 1) {
-    char buffer[12];
-    if (decimals == 0) {
-        snprintf(buffer, sizeof(buffer), "%.0f", value);
-    } else if (decimals == 1) {
-        snprintf(buffer, sizeof(buffer), "%.1f", value);
-    } else {
-        snprintf(buffer, sizeof(buffer), "%.2f", value);
-    }
-    draw_text(x, y, buffer, scale);
-}
-
-void update_display() {
-    display.clear();
-
-    // Fill background with black for inverted display
-    display.fillRect(0, 0, 296, 128, BLACK);
-
-    // Draw border (white on black)
-    display.drawRect(0, 0, 296, 128, WHITE);
-
-    // WiFi status (top right corner) - scale 1
-    draw_text(130, 2, "W:", 1);
-    if (wifi_client_connected) {
-        draw_text(142, 2, "STA", 1);
-    } else if (holding_regs.wifi_enabled) {
-        draw_number(142, 2, holding_regs.wifi_clients, 0, 1);
-    } else {
-        draw_text(142, 2, "OFF", 1);
-    }
-
-    // LoRaWAN status (top right corner) - scale 1
-    draw_text(175, 2, "L:", 1);
-    if (lorawan_joined) {
-        draw_text(187, 2, "OK", 1);
-        // Show RSSI and SNR from last uplink
-        char lora_info[30];
-        snprintf(lora_info, sizeof(lora_info), "R:%d S:%.1f", lorawan_last_rssi, lorawan_last_snr);
-        draw_text(210, 2, lora_info, 1);
-    } else {
-        draw_text(187, 2, "NO", 1);
-    }
-
-    // Title area - scale 1 for compactness
-    draw_text(3, 2, "SF6 Monitor", 1);
-    display.drawLine(0, 11, 295, 11, WHITE);
-
-    // Convert temperature to Celsius
-    float temp_celsius = input_regs.sf6_temperature / 10.0 - 273.15;
-
-    // Row 1: Density - scale 1
-    draw_text(3, 14, "Density:", 1);
-    draw_number(150, 14, input_regs.sf6_density / 100.0, 2, 1);
-    draw_text(210, 14, "kg/m3", 1);
-
-    // Row 2: Pressure @20C - scale 1
-    draw_text(3, 25, "Press@20C:", 1);
-    draw_number(150, 25, input_regs.sf6_pressure_20c / 10.0, 1, 1);
-    draw_text(210, 25, "kPa", 1);
-
-    // Row 3: Temperature - scale 1
-    draw_text(3, 36, "Temp:", 1);
-    draw_number(150, 36, temp_celsius, 1, 1);
-    draw_text(210, 36, "C", 1);
-
-    // Row 4: Pressure Variance - scale 1
-    draw_text(3, 47, "Press Var:", 1);
-    draw_number(150, 47, input_regs.sf6_pressure_var / 10.0, 1, 1);
-    draw_text(210, 47, "kPa", 1);
-
-    // Row 5: Quartz Frequency - scale 1 (divided by 100)
-    draw_text(3, 58, "Quartz:", 1);
-    draw_number(150, 58, input_regs.quartz_freq / 100.0, 2, 1);
-    draw_text(210, 58, "Hz", 1);
-
-    // Divider line
-    display.drawLine(0, 68, 295, 68, WHITE);
-
-    // Row 6: Modbus info - scale 1
-    draw_text(3, 71, "Modbus ID:", 1);
-    draw_number(70, 71, modbus_slave_id, 0, 1);
-    draw_text(100, 71, "Req:", 1);
-    draw_number(130, 71, holding_regs.sequential_counter % 10000, 0, 1);
-
-    // Row 7: WiFi/Network - scale 1
-    draw_text(3, 82, "WiFi:", 1);
-    if (wifi_client_connected) {
-        // Client mode - show SSID and IP
-        String ssid = WiFi.SSID();
-        if (ssid.length() > 10) {
-            ssid = ssid.substring(0, 10);
-        }
-        draw_text(35, 82, ssid.c_str(), 1);
-        draw_text(110, 82, WiFi.localIP().toString().c_str(), 1);
-    } else if (holding_regs.wifi_enabled) {
-        // AP mode - show client count
-        draw_text(35, 82, "AP", 1);
-        draw_number(55, 82, holding_regs.wifi_clients, 0, 1);
-        draw_text(75, 82, "clients", 1);
-    } else {
-        draw_text(35, 82, "OFF", 1);
-    }
-
-    // Row 8: LoRaWAN stats - scale 1
-    draw_text(3, 93, "LoRa:", 1);
-    if (lorawan_joined) {
-        draw_text(35, 93, "JOINED", 1);
-        draw_text(80, 93, "TX:", 1);
-        draw_number(100, 93, lorawan_uplink_count, 0, 1);
-    } else {
-        draw_text(35, 93, "NOT JOINED", 1);
-    }
-
-    // Display DevEUI (last 4 bytes as hex)
-    char deveui_str[16];
-    snprintf(deveui_str, sizeof(deveui_str), "EUI:%08X", (uint32_t)(devEUI & 0xFFFFFFFF));
-    draw_text(150, 93, deveui_str, 1);
-
-    // Row 9: System info - scale 1
-    draw_text(3, 104, "Uptime:", 1);
-    draw_number(45, 104, holding_regs.uptime_seconds, 0, 1);
-    draw_text(85, 104, "s  Heap:", 1);
-    draw_number(130, 104, holding_regs.free_heap_kb_low, 0, 1);
-    draw_text(160, 104, "KB", 1);
-
-    // Row 10: CPU/Temp/Version - scale 1
-    draw_text(3, 115, "CPU:", 1);
-    draw_number(30, 115, holding_regs.cpu_freq_mhz, 0, 1);
-    draw_text(60, 115, "MHz  Temp:", 1);
-    draw_number(120, 115, holding_regs.temperature_x10 / 10.0, 1, 1);
-    draw_text(155, 115, "C  ", 1);
-
-    // Version number at end of bottom line
-    char version_str[10];
-    snprintf(version_str, sizeof(version_str), "v%d.%02d", FIRMWARE_VERSION / 100, FIRMWARE_VERSION % 100);
-    draw_text(250, 115, version_str, 1);
-
-    display.update();
-
-    Serial.println("Display updated - SF6 sensors with text labels");
-    Serial.printf("  Density: %.2f kg/m3 (reg=%d)\n", input_regs.sf6_density/100.0, input_regs.sf6_density);
-    Serial.printf("  Pressure: %.1f kPa (reg=%d)\n", input_regs.sf6_pressure_20c/10.0, input_regs.sf6_pressure_20c);
-    Serial.printf("  Temperature: %.1fC (reg=%d)\n", temp_celsius, input_regs.sf6_temperature);
-    Serial.printf("  Pressure Var: %.1f kPa (reg=%d)\n", input_regs.sf6_pressure_var/10.0, input_regs.sf6_pressure_var);
-    if (wifi_client_connected) {
-        Serial.printf("  WiFi: Client Mode - SSID: %s, IP: %s\n", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-    } else {
-        Serial.printf("  WiFi: %s (%d clients)\n", holding_regs.wifi_enabled ? "AP Mode" : "OFF", holding_regs.wifi_clients);
-    }
-    Serial.printf("  Slave ID: %d, Counter: %d, Uptime: %d\n", modbus_slave_id, holding_regs.sequential_counter, holding_regs.uptime_seconds);
-}
 
 // ============================================================================
 // REGISTER UPDATE FUNCTIONS
 // ============================================================================
 
+// Synchronize RTU registers to TCP (only if TCP is enabled)
+void sync_tcp_registers() {
+    if (!modbus_tcp_enabled) return;
+
+    // Get RTU registers
+    HoldingRegisters& rtu_holding = modbusHandler.getHoldingRegisters();
+    InputRegisters& rtu_input = modbusHandler.getInputRegisters();
+
+    // Update TCP holding registers from RTU - using direct struct access
+    mbTCP.Hreg(0, rtu_holding.sequential_counter);
+    mbTCP.Hreg(1, rtu_holding.random_number);
+    mbTCP.Hreg(2, rtu_holding.uptime_seconds);
+    mbTCP.Hreg(3, rtu_holding.free_heap_kb_low);
+    mbTCP.Hreg(4, rtu_holding.free_heap_kb_high);
+    mbTCP.Hreg(5, rtu_holding.min_heap_kb);
+    mbTCP.Hreg(6, rtu_holding.cpu_freq_mhz);
+    mbTCP.Hreg(7, rtu_holding.task_count);
+    mbTCP.Hreg(8, rtu_holding.temperature_x10);
+    mbTCP.Hreg(9, rtu_holding.cpu_cores);
+    mbTCP.Hreg(10, rtu_holding.wifi_enabled);
+    mbTCP.Hreg(11, rtu_holding.wifi_clients);
+
+    // Update TCP input registers from RTU - using direct struct access
+    mbTCP.Ireg(0, rtu_input.sf6_density);
+    mbTCP.Ireg(1, rtu_input.sf6_pressure_20c);
+    mbTCP.Ireg(2, rtu_input.sf6_temperature);
+    mbTCP.Ireg(3, rtu_input.sf6_pressure_var);
+    mbTCP.Ireg(4, rtu_input.slave_id);
+    mbTCP.Ireg(5, rtu_input.serial_hi);
+    mbTCP.Ireg(6, rtu_input.serial_lo);
+    mbTCP.Ireg(7, rtu_input.sw_release);
+    mbTCP.Ireg(8, rtu_input.quartz_freq);
+}
+
 void update_holding_registers() {
-    holding_regs.random_number = random(65535);
-    holding_regs.uptime_seconds = millis() / 1000;
+    // Update the modbus handler's internal registers
+    modbusHandler.updateHoldingRegisters(
+        (wifi_ap_active || wifi_client_connected),
+        wifi_ap_active ? WiFi.softAPgetStationNum() : 0
+    );
 
-    uint32_t free_heap = ESP.getFreeHeap() / 1024;
-    holding_regs.free_heap_kb_low = free_heap & 0xFFFF;
-    holding_regs.free_heap_kb_high = (free_heap >> 16) & 0xFFFF;
-    holding_regs.min_heap_kb = ESP.getMinFreeHeap() / 1024;
-
-    holding_regs.cpu_freq_mhz = ESP.getCpuFreqMHz();
-    holding_regs.task_count = uxTaskGetNumberOfTasks();
-    holding_regs.temperature_x10 = (int16_t)(temperatureRead() * 10);
-    holding_regs.wifi_enabled = (wifi_ap_active || wifi_client_connected) ? 1 : 0;
-    holding_regs.wifi_clients = wifi_ap_active ? WiFi.softAPgetStationNum() : 0;
+    // Also update local copy for compatibility
+    HoldingRegisters& rtu_holding = modbusHandler.getHoldingRegisters();
+    holding_regs = rtu_holding;
 }
 
 void update_input_registers() {
@@ -713,15 +569,14 @@ void update_input_registers() {
     sf6_base_pressure = constrain(sf6_base_pressure, 0.0, 1100.0);
     sf6_base_temperature = constrain(sf6_base_temperature, 215.0, 360.0);
 
-    input_regs.sf6_density = (uint16_t)(sf6_base_density * 100);
-    input_regs.sf6_pressure_20c = (uint16_t)(sf6_base_pressure * 10);
-    input_regs.sf6_temperature = (uint16_t)(sf6_base_temperature * 10);
-    input_regs.sf6_pressure_var = input_regs.sf6_pressure_20c;
-
     portEXIT_CRITICAL(&timerMux);
 
-    // Quartz frequency with minor variation
-    input_regs.quartz_freq = 14750 + random(-50, 51);
+    // Update the modbus handler's internal registers
+    modbusHandler.updateInputRegisters(sf6_base_density, sf6_base_pressure, sf6_base_temperature);
+
+    // Also update local copy for compatibility
+    InputRegisters& rtu_input = modbusHandler.getInputRegisters();
+    input_regs = rtu_input;
 }
 
 // ============================================================================
@@ -729,153 +584,6 @@ void update_input_registers() {
 // ============================================================================
 
 // Connect to WiFi client network
-bool setup_wifi_client() {
-    if (strlen(wifi_client_ssid) == 0) {
-        Serial.println("No WiFi client credentials configured");
-        return false;
-    }
-
-    Serial.println("\n========================================");
-    Serial.println("Attempting WiFi Client Connection");
-    Serial.println("========================================");
-    Serial.printf("SSID: %s\n", wifi_client_ssid);
-    Serial.println("========================================\n");
-
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(wifi_client_ssid, wifi_client_password);
-
-    int attempts = 0;
-    while (WiFi.status() != WL_CONNECTED && attempts < 20) {  // 10 seconds timeout
-        delay(500);
-        Serial.print(".");
-        attempts++;
-    }
-    Serial.println();
-
-    if (WiFi.status() == WL_CONNECTED) {
-        wifi_client_connected = true;
-
-        // Initialize mDNS
-        if (MDNS.begin("stationsdata")) {
-            Serial.println("mDNS responder started: stationsdata.local");
-            MDNS.addService("https", "tcp", 443);
-            MDNS.addService("http", "tcp", 80);
-        } else {
-            Serial.println("Error starting mDNS");
-        }
-
-        Serial.println("\n========================================");
-        Serial.println("WiFi Client Connected!");
-        Serial.println("========================================");
-        Serial.printf("SSID:       %s\n", WiFi.SSID().c_str());
-        Serial.printf("IP Address: %s\n", WiFi.localIP().toString().c_str());
-        Serial.printf("mDNS:       stationsdata.local\n");
-        Serial.printf("RSSI:       %d dBm\n", WiFi.RSSI());
-        Serial.println("========================================\n");
-        return true;
-    } else {
-        Serial.println("\n========================================");
-        Serial.println("WiFi Client Connection Failed");
-        Serial.println("========================================");
-
-        // Get detailed failure information
-        wl_status_t status = WiFi.status();
-        Serial.printf("WiFi Status Code: %d\n", status);
-
-        switch(status) {
-            case WL_NO_SSID_AVAIL:
-                Serial.println("Reason: SSID not found");
-                Serial.println("  - Check if SSID is correct");
-                Serial.println("  - Ensure AP is in range");
-                Serial.println("  - Check if AP is broadcasting SSID");
-                break;
-            case WL_CONNECT_FAILED:
-                Serial.println("Reason: Connection failed");
-                Serial.println("  - Wrong password");
-                Serial.println("  - AP rejected connection");
-                Serial.println("  - Authentication error");
-                break;
-            case WL_CONNECTION_LOST:
-                Serial.println("Reason: Connection lost");
-                break;
-            case WL_DISCONNECTED:
-                Serial.println("Reason: Disconnected");
-                Serial.println("  - Timed out waiting for connection");
-                Serial.println("  - Check password and SSID");
-                break;
-            case WL_IDLE_STATUS:
-                Serial.println("Reason: Still in idle status");
-                break;
-            default:
-                Serial.printf("Reason: Unknown (status %d)\n", status);
-                break;
-        }
-
-        Serial.printf("SSID attempted: %s\n", wifi_client_ssid);
-        Serial.printf("Password length: %d characters\n", strlen(wifi_client_password));
-        Serial.println("========================================\n");
-
-        WiFi.mode(WIFI_OFF);
-        return false;
-    }
-}
-
-void setup_wifi_ap() {
-    Serial.println("Starting WiFi AP...");
-
-    // Load or generate password based on mode
-    #if MODE_PRODUCTION
-        Serial.println(">>> Production mode: Loading/generating secure password");
-        load_wifi_password();
-    #else
-        Serial.println(">>> Development mode: Using default password");
-        strcpy(wifi_password, "modbus123");
-    #endif
-
-    // Get MAC address and extract last 4 hex digits for unique SSID
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    char mac_suffix[5];
-    sprintf(mac_suffix, "%02X%02X", mac[4], mac[5]);
-
-    // Create unique SSID: ESP32-Modbus-Config-XXXX
-    String ssid = "ESP32-Modbus-Config-" + String(mac_suffix);
-
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP(ssid.c_str(), wifi_password, 1, 0, 4);
-
-    wifi_ap_active = true;
-    wifi_start_time = millis();
-
-    // Initialize mDNS
-    if (MDNS.begin("stationsdata")) {
-        Serial.println("mDNS responder started: stationsdata.local");
-        MDNS.addService("https", "tcp", 443);
-        MDNS.addService("http", "tcp", 80);
-    } else {
-        Serial.println("Error starting mDNS");
-    }
-
-    Serial.println("\n========================================");
-    Serial.println("WiFi AP Started");
-    Serial.println("========================================");
-    Serial.print("SSID:     ");
-    Serial.println(ssid);
-    Serial.print("Password: ");
-    Serial.println(wifi_password);
-    Serial.print("IP:       ");
-    Serial.println(WiFi.softAPIP());
-    Serial.print("mDNS:     ");
-    Serial.println("stationsdata.local");
-    Serial.printf("Timeout:  %d minutes\n", WIFI_TIMEOUT_MS / 60000);
-    Serial.println("========================================\n");
-
-    // Display SSID and password on screen in production mode
-    #if MODE_PRODUCTION
-        display_password_on_screen(ssid.c_str());
-        delay(20000);  // Show credentials for 20 seconds
-    #endif
-}
 
 void setup_web_server() {
     // Register GET handlers
@@ -897,6 +605,7 @@ void setup_web_server() {
     ResourceNode * nodeSF6Update = new ResourceNode("/sf6/update", "GET", &handle_sf6_update);
     ResourceNode * nodeSF6Reset = new ResourceNode("/sf6/reset", "GET", &handle_sf6_reset);
     ResourceNode * nodeEnableAuth = new ResourceNode("/security/enable", "GET", &handle_enable_auth);
+    ResourceNode * nodeFactoryReset = new ResourceNode("/factory-reset", "GET", &handle_factory_reset);
     ResourceNode * nodeReboot = new ResourceNode("/reboot", "GET", &handle_reboot);
 
     server.registerNode(nodeRoot);
@@ -915,6 +624,7 @@ void setup_web_server() {
     server.registerNode(nodeSF6Update);
     server.registerNode(nodeSF6Reset);
     server.registerNode(nodeEnableAuth);
+    server.registerNode(nodeFactoryReset);
     server.registerNode(nodeReboot);
 
     server.start();
@@ -1019,7 +729,25 @@ void handle_root(HTTPRequest * req, HTTPResponse * res) {
 
     html += "<div class='info'>";
     html += "<div class='info-item'><div class='info-label'>Modbus Slave ID</div><div class='info-value'>" + String(modbus_slave_id) + "</div></div>";
-    html += "<div class='info-item'><div class='info-label'>Modbus Requests</div><div class='info-value'>" + String(modbus_request_count) + "</div></div>";
+    ModbusStats& modbus_stats = modbusHandler.getStats();
+    html += "<div class='info-item'><div class='info-label'>Modbus RTU Requests</div><div class='info-value'>" + String(modbus_stats.request_count) + "</div></div>";
+
+    // Add Modbus TCP status
+    String tcp_status = "Disabled";
+    String tcp_color = "#95a5a6";  // Gray for disabled
+    if (modbus_tcp_enabled) {
+        if (wifi_client_connected) {
+            tcp_status = WiFi.localIP().toString() + ":502";
+            tcp_color = "#27ae60";  // Green for enabled
+        } else if (wifi_ap_active) {
+            tcp_status = WiFi.softAPIP().toString() + ":502";
+            tcp_color = "#27ae60";  // Green for enabled
+        } else {
+            tcp_status = "Enabled (WiFi Off)";
+            tcp_color = "#e67e22";  // Orange for waiting
+        }
+    }
+    html += "<div class='info-item'><div class='info-label'>Modbus TCP</div><div class='info-value' style='font-size:14px;color:" + tcp_color + ";'>" + tcp_status + "</div></div>";
 
     // WiFi status - show different info based on mode
     if (wifi_client_connected) {
@@ -1031,7 +759,7 @@ void handle_root(HTTPRequest * req, HTTPResponse * res) {
     }
 
     html += "<div class='info-item'><div class='info-label'>LoRaWAN Status</div><div class='info-value'>" + String(lorawan_joined ? "JOINED" : "NOT JOINED") + "</div></div>";
-    html += "<div class='info-item'><div class='info-label'>LoRa Uplinks</div><div class='info-value'>" + String(lorawan_uplink_count) + "</div></div>";
+    html += "<div class='info-item'><div class='info-label'>LoRa Uplinks</div><div class='info-value'>" + String(lorawanHandler.getUplinkCount()) + "</div></div>";
     html += "</div>";
 
     html += "<h2>Configuration</h2>";
@@ -1039,10 +767,19 @@ void handle_root(HTTPRequest * req, HTTPResponse * res) {
     html += "<label>Modbus Slave ID:</label>";
     html += "<input type='number' name='slave_id' min='1' max='247' value='" + String(modbus_slave_id) + "' required>";
     html += "<p style='font-size:12px;color:#7f8c8d;margin:5px 0 15px 0;'>Valid range: 1-247 (0=broadcast, 248-255=reserved)</p>";
+
+    html += "<div style='text-align:left;margin:20px 0;'>";
+    html += "<label style='display:flex;align-items:center;cursor:pointer;'>";
+    html += "<input type='checkbox' name='tcp_enabled' value='1' " + String(modbus_tcp_enabled ? "checked" : "") + " style='width:20px;height:20px;margin-right:10px;'>";
+    html += "<span>Enable Modbus TCP (port 502)</span>";
+    html += "</label>";
+    html += "<p style='font-size:12px;color:#7f8c8d;margin:5px 0 0 30px;'>Requires device restart to take effect</p>";
+    html += "</div>";
+
     html += "<input type='submit' value='Save Configuration'>";
     html += "</form>";
 
-    html += "<div class='footer'>ESP32-S3R8 | Modbus RTU + E-Ink Display | Arduino Framework</div>";
+    html += "<div class='footer'>ESP32-S3R8 | Modbus RTU/TCP + E-Ink Display | Arduino Framework</div>";
     html += "</div></body></html>";
 
     res->setStatusCode(200);
@@ -1086,13 +823,14 @@ void handle_stats(HTTPRequest * req, HTTPResponse * res) {
     html += "</div>";
     html += "<h1>System Statistics</h1>";
 
-    // Modbus Communication
+    // Modbus Communication - get stats from ModbusHandler
+    ModbusStats& stats = modbusHandler.getStats();
     html += "<h2>Modbus Communication</h2>";
     html += "<table><tr><th>Metric</th><th>Value</th><th>Description</th></tr>";
-    html += "<tr><td>Total Requests</td><td class='value'>" + String(modbus_request_count) + "</td><td>Total Modbus requests received</td></tr>";
-    html += "<tr><td>Read Operations</td><td class='value'>" + String(modbus_read_count) + "</td><td>Number of read operations</td></tr>";
-    html += "<tr><td>Write Operations</td><td class='value'>" + String(modbus_write_count) + "</td><td>Number of write operations</td></tr>";
-    html += "<tr><td>Error Count</td><td class='value'>" + String(modbus_error_count) + "</td><td>Communication errors</td></tr>";
+    html += "<tr><td>Total Requests</td><td class='value'>" + String(stats.request_count) + "</td><td>Total Modbus RTU requests received</td></tr>";
+    html += "<tr><td>Read Operations</td><td class='value'>" + String(stats.read_count) + "</td><td>Number of read operations</td></tr>";
+    html += "<tr><td>Write Operations</td><td class='value'>" + String(stats.write_count) + "</td><td>Number of write operations</td></tr>";
+    html += "<tr><td>Error Count</td><td class='value'>" + String(stats.error_count) + "</td><td>Communication errors</td></tr>";
     html += "</table>";
 
     // System Information
@@ -1113,16 +851,6 @@ void handle_stats(HTTPRequest * req, HTTPResponse * res) {
     html += "<tr><td>CPU Cores</td><td class='value'>2</td><td>Number of CPU cores</td></tr>";
     html += "<tr><td>FreeRTOS Tasks</td><td class='value'>" + String(uxTaskGetNumberOfTasks()) + "</td><td>Active FreeRTOS tasks</td></tr>";
     html += "<tr><td>Sequential Counter</td><td class='value'>" + String(holding_regs.sequential_counter) + "</td><td>Holding register 0 value</td></tr>";
-    html += "</table>";
-
-    // LoRaWAN Communication
-    html += "<h2>LoRaWAN Communication</h2>";
-    html += "<table><tr><th>Metric</th><th>Value</th><th>Description</th></tr>";
-    html += "<tr><td>Network Status</td><td class='value'>" + String(lorawan_joined ? "JOINED" : "NOT JOINED") + "</td><td>LoRaWAN network connection status</td></tr>";
-    html += "<tr><td>Total Uplinks</td><td class='value'>" + String(lorawan_uplink_count) + "</td><td>Number of uplinks sent</td></tr>";
-    html += "<tr><td>Total Downlinks</td><td class='value'>" + String(lorawan_downlink_count) + "</td><td>Number of downlinks received</td></tr>";
-    html += "<tr><td>Last RSSI</td><td class='value'>" + String(lorawan_last_rssi) + " dBm</td><td>Signal strength of last transmission</td></tr>";
-    html += "<tr><td>Last SNR</td><td class='value'>" + String(lorawan_last_snr, 1) + " dB</td><td>Signal-to-noise ratio</td></tr>";
     html += "</table>";
 
     html += "<div class='refresh'>Auto-refreshing every 5 seconds</div>";
@@ -1417,8 +1145,13 @@ void handle_config(HTTPRequest * req, HTTPResponse * res) {
     String postBody = readPostBody(req);
 
     String slave_id_str;
+    String tcp_enabled_str;
+
     if (getPostParameterFromBody(postBody, "slave_id", slave_id_str)) {
         int new_id = slave_id_str.toInt();
+
+        // Check if TCP enable checkbox was present
+        bool tcp_enable_checked = getPostParameterFromBody(postBody, "tcp_enabled", tcp_enabled_str);
 
         // Validate Modbus slave ID against reserved addresses
         String error_msg = "";
@@ -1435,18 +1168,32 @@ void handle_config(HTTPRequest * req, HTTPResponse * res) {
             modbus_slave_id = new_id;
             input_regs.slave_id = new_id;
 
+            // Update TCP enabled flag
+            bool old_tcp_enabled = modbus_tcp_enabled;
+            modbus_tcp_enabled = tcp_enable_checked;
+
             // Save to NVS
             preferences.begin("modbus", false);
             preferences.putUChar("slave_id", modbus_slave_id);
+            preferences.putBool("tcp_enabled", modbus_tcp_enabled);
             preferences.end();
 
             mb.slave(modbus_slave_id);  // Update Modbus slave ID
             Serial.printf("Modbus Slave ID changed to: %d (saved to NVS)\n", modbus_slave_id);
+            Serial.printf("Modbus TCP: %s (saved to NVS)\n", modbus_tcp_enabled ? "Enabled" : "Disabled");
 
             html += "<h1>Configuration Saved!</h1>";
             html += "<p>Modbus Slave ID updated to:</p>";
             html += "<div class='value'>" + String(modbus_slave_id) + "</div>";
-            html += "<p>The new ID is active immediately and saved to NVS.</p>";
+            html += "<p>Modbus TCP: <strong>" + String(modbus_tcp_enabled ? "Enabled" : "Disabled") + "</strong></p>";
+
+            // Show restart message if TCP state changed
+            if (old_tcp_enabled != modbus_tcp_enabled) {
+                html += "<p style='color:#e67e22;font-weight:bold;'>⚠ Please restart the device for TCP changes to take effect.</p>";
+            } else {
+                html += "<p>The new slave ID is active immediately.</p>";
+            }
+
             html += "<a href='/'>Back to Home</a>";
         } else {
             // Invalid slave ID
@@ -1514,29 +1261,54 @@ void handle_lorawan(HTTPRequest * req, HTTPResponse * res) {
     html += "<a href='/reboot' class='reboot' onclick='return confirm(\"Are you sure you want to reboot the device?\");'>Reboot</a>";
     html += "</div>";
 
-    html += "<h1>LoRaWAN Credentials</h1>";
-    html += "<p>These are your device's LoRaWAN OTAA credentials. Copy them to your network server (TTN, Chirpstack, etc.).</p>";
+    html += "<h1>LoRaWAN Configuration</h1>";
+    html += "<p>Device credentials and network status for LoRaWAN OTAA. Copy credentials to your network server (TTN, ChirpStack, AWS IoT Core, etc.).</p>";
+
+    // Display network status
+    html += "<h2>Network Status</h2>";
+    html += "<table>";
+    html += "<tr><th>Parameter</th><th>Value</th></tr>";
+    html += "<tr><td class='label'>Connection Status</td><td class='value' style='background:" + String(lorawan_joined ? "#d4edda" : "#f8d7da") + ";color:" + String(lorawan_joined ? "#155724" : "#721c24") + ";font-weight:bold;'>" + String(lorawan_joined ? "JOINED" : "NOT JOINED") + "</td></tr>";
+
+    if (lorawan_joined) {
+        html += "<tr><td class='label'>DevAddr</td><td class='value'>0x" + String(lorawanHandler.getDevAddr(), HEX) + "</td></tr>";
+    }
+
+    html += "<tr><td class='label'>Total Uplinks</td><td class='value'>" + String(lorawanHandler.getUplinkCount()) + "</td></tr>";
+    html += "<tr><td class='label'>Total Downlinks</td><td class='value'>" + String(lorawanHandler.getDownlinkCount()) + "</td></tr>";
+    html += "<tr><td class='label'>Last RSSI</td><td class='value'>" + String(lorawanHandler.getLastRSSI()) + " dBm</td></tr>";
+    html += "<tr><td class='label'>Last SNR</td><td class='value'>" + String(lorawanHandler.getLastSNR(), 1) + " dB</td></tr>";
+    html += "<tr><td class='label'>Region</td><td class='value'>EU868</td></tr>";
+    html += "</table>";
 
     // Display current credentials
     html += "<h2>Current Credentials</h2>";
     html += "<table>";
     html += "<tr><th>Parameter</th><th>Value</th></tr>";
 
+    // Get credentials from component
+    uint64_t currentJoinEUI = lorawanHandler.getJoinEUI();
+    uint64_t currentDevEUI = lorawanHandler.getDevEUI();
+    uint8_t currentAppKey[16];
+    uint8_t currentNwkKey[16];
+    lorawanHandler.getAppKey(currentAppKey);
+    lorawanHandler.getNwkKey(currentNwkKey);
+
     // JoinEUI
     char joinEUIStr[17];
-    sprintf(joinEUIStr, "%016llX", joinEUI);
+    sprintf(joinEUIStr, "%016llX", currentJoinEUI);
     html += "<tr><td class='label'>JoinEUI (AppEUI)</td><td class='value'>0x" + String(joinEUIStr) + "</td></tr>";
 
     // DevEUI
     char devEUIStr[17];
-    sprintf(devEUIStr, "%016llX", devEUI);
+    sprintf(devEUIStr, "%016llX", currentDevEUI);
     html += "<tr><td class='label'>DevEUI</td><td class='value'>0x" + String(devEUIStr) + "</td></tr>";
 
     // AppKey
     html += "<tr><td class='label'>AppKey</td><td class='value'>";
     for (int i = 0; i < 16; i++) {
         char buf[3];
-        sprintf(buf, "%02X", appKey[i]);
+        sprintf(buf, "%02X", currentAppKey[i]);
         html += String(buf);
     }
     html += "</td></tr>";
@@ -1545,7 +1317,7 @@ void handle_lorawan(HTTPRequest * req, HTTPResponse * res) {
     html += "<tr><td class='label'>NwkKey</td><td class='value'>";
     for (int i = 0; i < 16; i++) {
         char buf[3];
-        sprintf(buf, "%02X", nwkKey[i]);
+        sprintf(buf, "%02X", currentNwkKey[i]);
         html += String(buf);
     }
     html += "</td></tr>";
@@ -1651,8 +1423,8 @@ void handle_lorawan_config(HTTPRequest * req, HTTPResponse * res) {
                 nwkKey[i] = strtol(buf, NULL, 16);
             }
 
-            // Save to NVS
-            save_lorawan_credentials();
+            // Save to NVS using component
+            lorawanHandler.saveCredentials();
 
             html += "<h1>Credentials Updated!</h1>";
             html += "<div class='spinner'></div>";
@@ -1944,37 +1716,6 @@ void handle_wifi_status(HTTPRequest * req, HTTPResponse * res) {
 // ============================================================================
 
 // Load authentication credentials from NVS
-void load_auth_credentials() {
-    if (!preferences.begin("auth", true)) {  // Read-only
-        Serial.println(">>> Failed to open auth preferences");
-        return;
-    }
-
-    auth_enabled = preferences.getBool("enabled", true);
-    debug_https_enabled = preferences.getBool("debug_https", false);
-    debug_auth_enabled = preferences.getBool("debug_auth", false);
-
-    String username = preferences.getString("username", "admin");
-    String password = preferences.getString("password", "admin");
-
-    if (username.length() > 0 && username.length() <= 32) {
-        strncpy(auth_username, username.c_str(), sizeof(auth_username) - 1);
-        auth_username[sizeof(auth_username) - 1] = '\0';
-    }
-
-    if (password.length() > 0 && password.length() <= 32) {
-        strncpy(auth_password, password.c_str(), sizeof(auth_password) - 1);
-        auth_password[sizeof(auth_password) - 1] = '\0';
-    }
-
-    preferences.end();
-
-    Serial.println(">>> Authentication credentials loaded");
-    Serial.printf("    Enabled: %s\n", auth_enabled ? "YES" : "NO");
-    Serial.printf("    Username: %s\n", auth_username);
-    Serial.printf("    HTTPS Debug: %s\n", debug_https_enabled ? "YES" : "NO");
-    Serial.printf("    Auth Debug: %s\n", debug_auth_enabled ? "YES" : "NO");
-}
 
 // Save authentication credentials to NVS
 void save_auth_credentials() {
@@ -2256,6 +1997,26 @@ void handle_security(HTTPRequest * req, HTTPResponse * res) {
     html += "<input type='submit' value='Save Debug Settings'>";
     html += "</form>";
 
+    html += "<h2 style='margin-top:30px;color:#e74c3c;'>Factory Reset</h2>";
+    html += "<div class='warning' style='background:#ffe5e5;border-color:#e74c3c;color:#721c24;'>";
+    html += "<strong>Danger Zone:</strong> This will erase ALL stored settings and restore factory defaults.";
+    html += "</div>";
+    html += "<div class='card'>";
+    html += "<p><strong>This will reset:</strong></p>";
+    html += "<ul style='text-align:left;margin:10px 0;padding-left:20px;'>";
+    html += "<li>Modbus Slave ID (back to 1)</li>";
+    html += "<li>Modbus TCP enable setting (disabled)</li>";
+    html += "<li>Authentication credentials (back to admin/admin)</li>";
+    html += "<li>WiFi client credentials (will be cleared)</li>";
+    html += "<li>SF6 manual control values (back to defaults)</li>";
+    html += "<li>LoRaWAN session and DevNonce (will rejoin on next boot)</li>";
+    html += "</ul>";
+    html += "<p style='color:#e74c3c;'><strong>Device will automatically reboot after reset.</strong></p>";
+    html += "<button onclick='if(confirm(\"Are you sure you want to erase ALL settings and restore factory defaults? This cannot be undone!\")) window.location.href=\"/factory-reset\"' ";
+    html += "style='background:#e74c3c;color:white;padding:12px 30px;border:none;border-radius:5px;font-size:16px;cursor:pointer;margin-top:10px;'>";
+    html += "Factory Reset (Erase All Settings)</button>";
+    html += "</div>";
+
     html += "</div></body></html>";
     res->setStatusCode(200);
     res->setHeader("Content-Type", "text/html");
@@ -2444,47 +2205,77 @@ void handle_reboot(HTTPRequest * req, HTTPResponse * res) {
     ESP.restart();
 }
 
+// Handle factory reset
+void handle_factory_reset(HTTPRequest * req, HTTPResponse * res) {
+    if (!check_authentication(req, res)) return;
+
+    String html = "<!DOCTYPE html><html><head><title>Factory Reset - Vision Master E290</title>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<meta http-equiv='refresh' content='10;url=/'>";
+    html += "<style>";
+    html += "body{font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:20px;background:#f5f5f5;}";
+    html += ".container{max-width:600px;margin:50px auto;background:white;padding:40px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);text-align:center;}";
+    html += "h1{color:#e74c3c;}";
+    html += "p{color:#7f8c8d;font-size:16px;margin:20px 0;}";
+    html += ".spinner{border:4px solid #f3f3f3;border-top:4px solid #e74c3c;border-radius:50%;width:50px;height:50px;animation:spin 1s linear infinite;margin:20px auto;}";
+    html += "@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}";
+    html += "</style></head><body><div class='container'>";
+    html += "<h1>Factory Reset in Progress...</h1>";
+    html += "<div class='spinner'></div>";
+    html += "<p>All settings are being erased and defaults restored.</p>";
+    html += "<p>The device will reboot automatically.</p>";
+    html += "<p><small>Default credentials after reboot: admin/admin</small></p>";
+    html += "</div></body></html>";
+
+    res->setStatusCode(200);
+    res->setHeader("Content-Type", "text/html");
+    res->print(html.c_str());
+
+    Serial.println("\n========================================");
+    Serial.println("FACTORY RESET REQUESTED");
+    Serial.println("========================================");
+
+    delay(500);
+
+    // Clear all NVS namespaces
+    Serial.println("Clearing Modbus settings...");
+    preferences.begin("modbus", false);
+    preferences.clear();
+    preferences.end();
+
+    Serial.println("Clearing Authentication settings...");
+    preferences.begin("auth", false);
+    preferences.clear();
+    preferences.end();
+
+    Serial.println("Clearing WiFi settings...");
+    preferences.begin("wifi", false);
+    preferences.clear();
+    preferences.end();
+
+    Serial.println("Clearing SF6 settings...");
+    preferences.begin("sf6", false);
+    preferences.clear();
+    preferences.end();
+
+    Serial.println("Clearing LoRaWAN settings...");
+    preferences.begin("lorawan", false);
+    preferences.clear();
+    preferences.end();
+
+    Serial.println("\nFactory reset complete!");
+    Serial.println("All NVS settings have been erased.");
+    Serial.println("Device will restart with factory defaults.");
+    Serial.println("========================================\n");
+
+    delay(1000);
+    ESP.restart();
+}
+
 // ============================================================================
 // MODBUS FUNCTIONS
 // ============================================================================
 
-void setup_modbus() {
-    Serial.println("\n========================================");
-    Serial.println("Initializing Modbus RTU Slave...");
-    Serial.println("========================================");
-
-    // Initialize UART for RS485 (HW-519 module)
-    Serial1.begin(MB_UART_BAUD, SERIAL_8N1, MB_UART_RX, MB_UART_TX);
-
-    Serial.printf("UART1: TX=GPIO%d, RX=GPIO%d, Baud=%d\n",
-                  MB_UART_TX, MB_UART_RX, MB_UART_BAUD);
-    Serial.println("HW-519: Automatic flow control (no RTS needed)");
-
-    // Configure Modbus RTU slave
-    mb.begin(&Serial1);
-    mb.slave(modbus_slave_id);
-
-    // Add holding registers (0-11) - Read/Write
-    for (uint16_t i = 0; i < 12; i++) {
-        mb.addHreg(i, 0);
-    }
-
-    // Add input registers (0-8) - Read Only
-    for (uint16_t i = 0; i < 9; i++) {
-        mb.addIreg(i, 0);
-    }
-
-    // Set up callbacks
-    mb.onGetHreg(0, cb_read_holding_register, 12);   // Holding regs 0-11
-    mb.onSetHreg(0, cb_write_holding_register, 12);  // Allow writes to holding regs
-    mb.onGetIreg(0, cb_read_input_register, 9);      // Input regs 0-8
-
-    Serial.printf("Modbus Slave ID: %d\n", modbus_slave_id);
-    Serial.println("Holding Registers: 0-11 (Read/Write)");
-    Serial.println("Input Registers: 0-8 (Read Only)");
-    Serial.println("Modbus RTU Slave initialized!");
-    Serial.println("========================================\n");
-}
 
 // Callback: Read Holding Register
 uint16_t cb_read_holding_register(TRegister* reg, uint16_t val) {
@@ -2598,56 +2389,6 @@ void generate_lorawan_credentials() {
 }
 
 // Load LoRaWAN credentials from NVS
-void load_lorawan_credentials() {
-    Serial.println(">>> Opening LoRaWAN preferences namespace...");
-
-    // Try to open in read-only mode first
-    if (!preferences.begin("lorawan", true)) {
-        // Namespace doesn't exist - this is first boot
-        Serial.println(">>> Namespace doesn't exist (first boot)");
-        Serial.println(">>> Generating new credentials...");
-
-        // Generate and save new credentials
-        generate_lorawan_credentials();
-        save_lorawan_credentials();
-        return;
-    }
-
-    Serial.println(">>> Preferences namespace opened");
-
-    // Check if credentials exist
-    bool hasCredentials = preferences.getBool("has_creds", false);
-    Serial.printf(">>> Credentials exist flag: %s\n", hasCredentials ? "YES" : "NO");
-
-    if (hasCredentials) {
-        Serial.println(">>> Loading LoRaWAN credentials from NVS...");
-
-        // Load JoinEUI and DevEUI
-        joinEUI = preferences.getULong64("joinEUI", 0);
-        devEUI = preferences.getULong64("devEUI", 0);
-
-        // Load AppKey
-        size_t appKeyLen = preferences.getBytes("appKey", appKey, 16);
-        Serial.printf("    Loaded AppKey (%d bytes)\n", appKeyLen);
-
-        // Load NwkKey
-        size_t nwkKeyLen = preferences.getBytes("nwkKey", nwkKey, 16);
-        Serial.printf("    Loaded NwkKey (%d bytes)\n", nwkKeyLen);
-
-        Serial.println(">>> Loaded credentials from storage");
-    } else {
-        Serial.println(">>> No stored credentials found - will generate new ones");
-        preferences.end();
-
-        // Generate and save new credentials
-        generate_lorawan_credentials();
-        save_lorawan_credentials();
-        return;
-    }
-
-    preferences.end();
-    Serial.println(">>> Preferences closed");
-}
 
 // Save LoRaWAN credentials to NVS
 void save_lorawan_credentials() {
@@ -2774,38 +2515,6 @@ void load_lorawan_session() {
 }
 
 // Print LoRaWAN credentials to serial console
-void print_lorawan_credentials() {
-    Serial.println("\n========================================");
-    Serial.println("LoRaWAN Device Credentials");
-    Serial.println("========================================");
-
-    Serial.print("JoinEUI (AppEUI): 0x");
-    Serial.println((unsigned long long)joinEUI, HEX);
-
-    Serial.print("DevEUI:           0x");
-    Serial.println((unsigned long long)devEUI, HEX);
-
-    Serial.print("AppKey:           ");
-    for (int i = 0; i < 16; i++) {
-        if (appKey[i] < 0x10) Serial.print("0");
-        Serial.print(appKey[i], HEX);
-    }
-    Serial.println();
-
-    Serial.print("NwkKey:           ");
-    for (int i = 0; i < 16; i++) {
-        if (nwkKey[i] < 0x10) Serial.print("0");
-        Serial.print(nwkKey[i], HEX);
-    }
-    Serial.println();
-
-    Serial.println("========================================");
-    Serial.println("Copy these credentials to your network server:");
-    Serial.println("  - The Things Network (TTN)");
-    Serial.println("  - Chirpstack");
-    Serial.println("  - AWS IoT Core for LoRaWAN");
-    Serial.println("========================================\n");
-}
 
 // ============================================================================
 // WIFI PASSWORD MANAGEMENT
@@ -2857,7 +2566,7 @@ void load_wifi_password() {
     // Generate new password if none exists
     if (!has_password) {
         generate_wifi_password();
-        save_wifi_password();
+        wifiManager.saveAPPassword();
     }
 }
 
@@ -2966,336 +2675,5 @@ void save_sf6_values() {
 }
 
 // Display WiFi SSID and password on E-Ink screen during startup
-void display_password_on_screen(const char* ssid) {
-    display.clear();
-    display.fillRect(0, 0, 296, 128, BLACK);
-    display.drawRect(0, 0, 296, 128, WHITE);
 
-    // Title
-    draw_text(50, 5, "WiFi AP Credentials", 1);
-    display.drawLine(0, 17, 295, 17, WHITE);
 
-    // SSID
-    draw_text(5, 25, "SSID:", 1);
-    draw_text(5, 35, ssid, 1);
-
-    // Password
-    draw_text(5, 55, "Password:", 2);
-    draw_text(5, 75, wifi_password, 2);
-
-    // Instructions
-    draw_text(5, 100, "Connect using above", 1);
-    draw_text(5, 110, "Screen updates in 20s", 1);
-
-    display.update();
-
-    Serial.println("\n========================================");
-    Serial.println("WiFi AP credentials displayed on screen");
-    Serial.println("========================================\n");
-}
-
-void setup_lorawan() {
-    Serial.println("\n========================================");
-    Serial.println("Initializing LoRaWAN...");
-    Serial.println("========================================");
-
-    // LoRa radio initializes SPI bus first
-    // E-Ink display will share this SPI bus later
-    Serial.println("Initializing LoRa radio on SPI bus...");
-    Serial.printf("  LoRa pins: SCK=%d, MISO=%d, MOSI=%d, NSS=%d\n", LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
-    Serial.printf("  LoRa control: DIO1=%d, RESET=%d, BUSY=%d\n", LORA_DIO1, LORA_NRST, LORA_BUSY);
-
-    int state;  // Declare once for all operations
-
-    // Initialize SPI bus explicitly for LoRa radio
-    Serial.print("Initializing SPI bus... ");
-    SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
-    Serial.println("done");
-    delay(100);
-
-    // Initialize radio hardware minimally
-    Serial.print("Initializing SX1262... ");
-    state = radio.begin();
-    if (state == RADIOLIB_ERR_NONE) {
-        Serial.println("success");
-    } else {
-        Serial.print("failed, code ");
-        Serial.println(state);
-    }
-
-    // Configure TCXO - Vision Master E290 uses crystal oscillator (not TCXO)
-    Serial.print("Configuring oscillator (crystal mode)... ");
-    state = radio.setTCXO(0);  // 0 = disable TCXO, use crystal
-    Serial.println(state == RADIOLIB_ERR_NONE ? "success" : "failed");
-
-    Serial.print("Configuring RF switch (DIO2)... ");
-    state = radio.setDio2AsRfSwitch(true);
-    Serial.println(state == RADIOLIB_ERR_NONE ? "success" : "failed");
-
-    // Configure current limit (helps with power stability during RX)
-    Serial.print("Configuring current limit... ");
-    state = radio.setCurrentLimit(140);  // 140 mA
-    Serial.println(state == RADIOLIB_ERR_NONE ? "success" : "failed");
-
-    // Credentials already printed by print_lorawan_credentials() in setup()
-
-    // NOTE: Full session persistence disabled due to RadioLib 7.4.0 limitation
-    // setBufferSession() returns -1120 (signature mismatch)
-    // BUT we MUST persist nonces to avoid DevNonce replay errors!
-    Serial.println("\nChecking for saved nonces (required for DevNonce tracking)...");
-
-    bool sessionRestored = false;
-    bool noncesRestored = false;
-
-    // Try to restore ONLY nonces (not full session)
-    if (preferences.begin("lorawan", true)) {
-        bool hasNonces = preferences.getBool("has_nonces", false);
-        Serial.printf(">>> has_nonces flag: %s\n", hasNonces ? "true" : "false");
-        preferences.end();
-
-        if (hasNonces) {
-            Serial.println(">>> Found saved nonces - restoring...");
-
-            // Initialize node first
-            node.beginOTAA(joinEUI, devEUI, nwkKey, appKey);
-
-            // Load ONLY nonces from NVS
-            if (preferences.begin("lorawan", true)) {
-                const size_t noncesSize = RADIOLIB_LORAWAN_NONCES_BUF_SIZE;
-                uint8_t noncesBuffer[RADIOLIB_LORAWAN_NONCES_BUF_SIZE];
-                size_t noncesRead = preferences.getBytes("nonces", noncesBuffer, noncesSize);
-                preferences.end();
-
-                if (noncesRead == noncesSize) {
-                    Serial.printf(">>> Loaded nonces (%d bytes)\n", noncesRead);
-                    int16_t state = node.setBufferNonces(noncesBuffer);
-                    Serial.printf(">>> setBufferNonces() returned: %d\n", state);
-
-                    if (state == RADIOLIB_ERR_NONE) {
-                        noncesRestored = true;
-                        Serial.println(">>> Nonces restored - DevNonce will continue from last value");
-                    } else {
-                        Serial.printf(">>> Nonces restore failed: %d\n", state);
-                    }
-                }
-            }
-        }
-    }
-
-    // Initialize node if nonces weren't restored
-    if (!noncesRestored) {
-        Serial.println("\nInitializing LoRaWAN node...");
-        Serial.println("Region: EU868");
-        node.beginOTAA(joinEUI, devEUI, nwkKey, appKey);
-    } else {
-        Serial.println("\nNonces restored - proceeding with fresh join using incremented DevNonce...");
-    }
-    Serial.println("LoRaWAN credentials configured");
-
-    // Attempt OTAA join
-    Serial.println("\nAttempting OTAA join...");
-    Serial.println("This may take 30-60 seconds...");
-    Serial.println("Waiting for join accept from network server...");
-
-    state = node.activateOTAA();
-
-    // Check for successful join: RadioLib returns negative codes for LoRaWAN-specific states
-    // -1118 = RADIOLIB_LORAWAN_NEW_SESSION (new join successful)
-    // -1117 = RADIOLIB_LORAWAN_SESSION_RESTORED (restored from persistent storage)
-    if (state == RADIOLIB_LORAWAN_NEW_SESSION || state == RADIOLIB_LORAWAN_SESSION_RESTORED) {
-        Serial.println("\nJoin successful!");
-        if (state == RADIOLIB_LORAWAN_NEW_SESSION) {
-            Serial.println("Status: New LoRaWAN session established");
-        } else {
-            Serial.println("Status: Previous session restored");
-        }
-        Serial.print("DevAddr: 0x");
-        Serial.println(node.getDevAddr(), HEX);
-        lorawan_joined = true;
-
-        // Send immediate uplink after join to initialize frame counters
-        // This will also save the session with proper state
-        Serial.println("\n>>> Sending immediate uplink after join...");
-        delay(1000);  // Brief delay to ensure join is fully processed
-
-        // Update sensor data before first uplink (otherwise payload is empty)
-        update_input_registers();
-        send_lorawan_uplink();
-    } else {
-        Serial.print("\nJoin failed, code ");
-        Serial.println(state);
-
-        // Print helpful error messages
-        if (state == RADIOLIB_ERR_NO_JOIN_ACCEPT) {  // -1116
-            Serial.println("Error: No Join-Accept received (RADIOLIB_ERR_NO_JOIN_ACCEPT)");
-            Serial.println("  - Join request transmitted");
-            Serial.println("  - No response received from network server");
-            Serial.println("  - Check: Device registered in network server");
-            Serial.println("  - Check: Gateway in range and online");
-            Serial.println("  - Check: Credentials (joinEUI, devEUI, appKey)");
-        } else if (state == RADIOLIB_ERR_CHIP_NOT_FOUND) {  // -1116 (same value, different context)
-            Serial.println("Error: Radio communication lost (RADIOLIB_ERR_CHIP_NOT_FOUND)");
-            Serial.println("  - SPI communication failure");
-            Serial.println("  - Check: SPI bus conflicts");
-            Serial.println("  - Check: Radio power and connections");
-        } else if (state == RADIOLIB_ERR_TX_TIMEOUT) {  // -101
-            Serial.println("Error: Transmission timeout (RADIOLIB_ERR_TX_TIMEOUT)");
-            Serial.println("  - Join request failed to transmit");
-            Serial.println("  - Check: Radio configuration");
-            Serial.println("  - Check: Antenna connection");
-        } else {
-            Serial.println("Error: Unknown error code");
-            Serial.println("  - See RadioLib documentation for error code details");
-            Serial.println("  - https://jgromes.github.io/RadioLib/group__status__codes.html");
-        }
-
-        Serial.println("\nWill retry in next cycle...");
-        lorawan_joined = false;
-    }
-
-    Serial.println("========================================\n");
-}
-
-void send_lorawan_uplink() {
-    if (!lorawan_joined) {
-        Serial.println("LoRaWAN: Not joined, skipping uplink");
-        return;
-    }
-
-    Serial.println("========================================");
-    Serial.println("Sending LoRaWAN uplink...");
-
-    // Set device status for LoRaWAN network server
-    // Battery level: 0 = external power, 1-254 = battery level, 255 = unable to measure
-    // Using 0 since this is a mains-powered device
-    node.setDeviceStatus(0);
-
-    // Prepare payload in AdeunisModbusSf6 format (10 bytes)
-    // The decoder expects 20 hex characters (10 bytes):
-    // - First 4 hex chars (2 bytes): Header - skipped by decoder
-    // - Remaining 16 hex chars (8 bytes): Modbus data (4 registers × 2 bytes)
-    //
-    // Payload structure:
-    // Bytes 0-1: Header (uplink counter for tracking, decoder ignores these)
-    // Bytes 2-3: SF6 Density (kg/m³ × 100, big-endian)
-    // Bytes 4-5: SF6 Pressure @20C (bar × 1000, big-endian)
-    // Bytes 6-7: SF6 Temperature (Kelvin × 10, big-endian)
-    // Bytes 8-9: SF6 Pressure Variance (bar × 1000, big-endian)
-    uint8_t payload[10];
-
-    // Header (bytes 0-1) - Uplink counter for tracking
-    // Decoder skips these, but useful for debugging/tracking
-    payload[0] = (lorawan_uplink_count >> 8) & 0xFF;
-    payload[1] = lorawan_uplink_count & 0xFF;
-
-    // Modbus register data (bytes 2-9) - TrafagH72517oModbusSf6 format
-    // Register 0: SF6 Density (2 bytes, big-endian)
-    // Modbus: kg/m³ × 100 → LoRa: kg/m³ × 100 (no conversion needed)
-    payload[2] = (input_regs.sf6_density >> 8) & 0xFF;
-    payload[3] = input_regs.sf6_density & 0xFF;
-
-    // Register 1: SF6 Pressure @20C (2 bytes, big-endian)
-    // Modbus: kPa × 10 → LoRa: bar × 1000
-    // Convert: kPa × 10 = bar × 1000 (since 1 bar = 100 kPa)
-    // (kPa × 10) = (bar × 100 × 10) = (bar × 1000) ✓
-    // So: just send the register value as-is
-    payload[4] = (input_regs.sf6_pressure_20c >> 8) & 0xFF;
-    payload[5] = input_regs.sf6_pressure_20c & 0xFF;
-
-    // Register 2: SF6 Temperature (2 bytes, big-endian)
-    // Modbus: K × 10 → LoRa: K × 10 (no conversion needed)
-    payload[6] = (input_regs.sf6_temperature >> 8) & 0xFF;
-    payload[7] = input_regs.sf6_temperature & 0xFF;
-
-    // Register 3: SF6 Pressure Variance (2 bytes, big-endian)
-    // Modbus: kPa × 10 → LoRa: bar × 1000 (same conversion as pressure @20C)
-    payload[8] = (input_regs.sf6_pressure_var >> 8) & 0xFF;
-    payload[9] = input_regs.sf6_pressure_var & 0xFF;
-
-    // Print payload in hex for debugging (AdeunisModbusSf6 format)
-    Serial.print("Payload (");
-    Serial.print(sizeof(payload));
-    Serial.print(" bytes): ");
-    for (size_t i = 0; i < sizeof(payload); i++) {
-        if (payload[i] < 0x10) Serial.print("0");
-        Serial.print(payload[i], HEX);
-    }
-    Serial.println();
-
-    Serial.println("Payload breakdown (AdeunisModbusSf6 format):");
-    Serial.printf("  Header (uplink #%u) - bytes 0-1 skipped by decoder\n",
-        (payload[0] << 8) | payload[1]);
-    Serial.printf("  SF6 Density: %u (%.2f kg/m³)\n",
-        (payload[2] << 8) | payload[3],
-        ((payload[2] << 8) | payload[3]) / 100.0);
-    Serial.printf("  SF6 Pressure @20C: %u (%.3f bar)\n",
-        (payload[4] << 8) | payload[5],
-        ((payload[4] << 8) | payload[5]) / 1000.0);
-    Serial.printf("  SF6 Temperature: %u (%.1f °C)\n",
-        (payload[6] << 8) | payload[7],
-        (((payload[6] << 8) | payload[7]) / 10.0) - 273.15);
-    Serial.printf("  SF6 Pressure Var: %u (%.3f bar)\n",
-        (payload[8] << 8) | payload[9],
-        ((payload[8] << 8) | payload[9]) / 1000.0);
-
-    // Send unconfirmed uplink on port 1 (RadioLib 7.x API)
-    uint8_t downlinkPayload[256];
-    size_t downlinkSize = 0;
-
-    int state = node.sendReceive(payload, sizeof(payload), 1, downlinkPayload, &downlinkSize);
-
-    // RadioLib sendReceive() return values:
-    // < 0: Error occurred
-    // 0: Success, no downlink
-    // 1: Success, downlink in RX1 window
-    // 2: Success, downlink in RX2 window
-    if (state >= RADIOLIB_ERR_NONE) {
-        Serial.println("Uplink successful!");
-        lorawan_uplink_count++;
-
-        // Get RSSI and SNR from last transmission
-        lorawan_last_rssi = radio.getRSSI();
-        lorawan_last_snr = radio.getSNR();
-
-        Serial.print("RSSI: ");
-        Serial.print(lorawan_last_rssi);
-        Serial.print(" dBm, SNR: ");
-        Serial.print(lorawan_last_snr);
-        Serial.println(" dB");
-
-        // Check if downlink was received
-        if (state > 0) {
-            Serial.print("Downlink received in RX");
-            Serial.print(state);
-            Serial.println(" window");
-            lorawan_downlink_count++;
-
-            // Check if downlink has data
-            if (downlinkSize > 0) {
-                Serial.print("Downlink payload (");
-                Serial.print(downlinkSize);
-                Serial.print(" bytes): ");
-                for (size_t i = 0; i < downlinkSize; i++) {
-                    if (downlinkPayload[i] < 0x10) Serial.print("0");
-                    Serial.print(downlinkPayload[i], HEX);
-                    Serial.print(" ");
-                }
-                Serial.println();
-            } else {
-                Serial.println("Downlink ACK received (no payload)");
-            }
-        }
-
-        // Save nonces after uplink to persist DevNonce
-        save_lorawan_session();
-    } else {
-        Serial.print("Uplink failed, code ");
-        Serial.println(state);
-    }
-
-    Serial.print("Total uplinks: ");
-    Serial.print(lorawan_uplink_count);
-    Serial.print(", downlinks: ");
-    Serial.println(lorawan_downlink_count);
-    Serial.println("========================================\n");
-}
