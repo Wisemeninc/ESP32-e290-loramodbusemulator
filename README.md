@@ -2,6 +2,10 @@
 
 This project implements a full-featured Modbus RTU slave on the **Heltec Vision Master E290** (ESP32-S3R8 with E-Ink display and LoRa) using the HW-519 RS485 module. Perfect for testing SCADA systems, HMI applications, or learning Modbus protocol.
 
+**Framework:** Arduino (via PlatformIO)
+**Platform:** Espressif32 (ESP32-S3)
+**Current Version:** v1.40
+
 **Key Highlights:**
 - 🔧 **12 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
 - 🎯 **9 Input Registers** with realistic SF₆ gas sensor emulation
@@ -12,9 +16,13 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 - 📶 **LoRaWAN support** to transmit Modbus data wirelessly over long range
 - 📺 **2.9" E-Ink display** shows real-time register data and LoRaWAN status
 
-Case: https://www.printables.com/model/974647-vision-master-e290-v031-case-for-meshtastic/files
-Board: https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Meshtastic/dp/B0DRG5J5R5/ref=sr_1_1?crid=3U044HWSXMQ6A&dib=eyJ2IjoiMSJ9.YoHIFAF5SYU13wPMcI3z0o5FrWHRIAIURS_jXTnFTpBuP7UZve6GrgROBM5S9etb5bfGYUtu4rsEZLOdscTTNFs-IM4bNr3DjsYnKTtFmZWUq04eISMxsWONlUl04XZIYLjN-8t6Mk9vyMhSIrrhs19dqwEzApiuOnNlDGlJxTK2T0EpJVAQXFbpsOOBfXQj8S9x_1pfjDWp9Fd8jnI7yx7xQJ9tAMjJyrarr9p0xx4.v2UVvtgnnTRFwIt6zFcIBJht59kzyWvEq3QsAww-LrU&dib_tag=se&keywords=vision+master+e290&qid=1762809245&sprefix=vision+master+e290%2Caps%2C124&sr=8-1
+Case: 
+https://www.printables.com/model/974647-vision-master-e290-v031-case-for-meshtastic/files
 
+Boards: 
+https://www.tinytronics.nl/en/development-boards/microcontroller-boards/with-lora/heltec-vision-master-e290-esp32-s3-sx1262-lora-868mhz-with-2.9-inch-e-paper-display
+
+https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Meshtastic/dp/B0DRG5J5R5/ref=sr_1_1?crid=3U044HWSXMQ6A&dib=eyJ2IjoiMSJ9.YoHIFAF5SYU13wPMcI3z0o5FrWHRIAIURS_jXTnFTpBuP7UZve6GrgROBM5S9etb5bfGYUtu4rsEZLOdscTTNFs-IM4bNr3DjsYnKTtFmZWUq04eISMxsWONlUl04XZIYLjN-8t6Mk9vyMhSIrrhs19dqwEzApiuOnNlDGlJxTK2T0EpJVAQXFbpsOOBfXQj8S9x_1pfjDWp9Fd8jnI7yx7xQJ9tAMjJyrarr9p0xx4.v2UVvtgnnTRFwIt6zFcIBJht59kzyWvEq3QsAww-LrU&dib_tag=se&keywords=vision+master+e290&qid=1762809245&sprefix=vision+master+e290%2Caps%2C124&sr=8-1
 
 ## Features
 
@@ -54,23 +62,23 @@ Board: https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Me
   - Persistent configuration stored in NVS (Non-Volatile Storage)
 
 ### LoRaWAN Features
-- **LoRaWAN OTAA** (Over-The-Air Activation) support
+- **LoRaWAN OTAA** (Over-The-Air Activation) - fully implemented
 - **Periodic transmission** of Modbus register data
-- **Configurable regions:** US915, EU868, AS923, AU915
+- **RadioLib integration** with SX1262 transceiver
+- **Region support:** EU868 (configurable in src/main.cpp)
 - **Efficient payload encoding** (18 bytes for key registers)
-- **SX1262 LoRa transceiver** integration framework
-- **Downlink support** for remote configuration (framework)
+- **Session persistence** with NVS storage
+- **Uplink and downlink** handling
+- **Join status monitoring** on E-Ink display
 
-**Note:** The current LoRaWAN implementation provides a framework structure. For full functionality, integrate with:
-- [Heltec LoRaWAN Library](https://github.com/HelTecAutomation/Heltec_ESP32) (Arduino-based)
-- [RadioLib](https://github.com/jgromes/RadioLib) for ESP32
-- Custom LoRaMAC implementation for ESP-IDF
+**Note:** LoRaWAN is fully implemented using [RadioLib](https://github.com/jgromes/RadioLib). Configure your credentials (DevEUI, JoinEUI, AppKey, NwkKey) in src/main.cpp lines 101-130. Default region is EU868.
 
 ### E-Ink Display Features
 - **2.9" E-Paper display** (296×128 pixels, black and white)
-- **Real-time monitoring** of Modbus registers sent over LoRaWAN
+- **Fully functional graphics** using Heltec E-Ink library
+- **Real-time monitoring** of Modbus registers and LoRaWAN status
 - **Automatic updates** every 30 seconds
-- **Partial refresh** for fast updates, full refresh every 10 cycles
+- **Configurable rotation** (portrait/landscape via DISPLAY_ROTATION define)
 - **Low power** - E-Ink retains image without power
 - **Display shows:**
   - LoRaWAN status (JOINED/JOINING/DISABLED)
@@ -78,11 +86,7 @@ Board: https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Me
   - System metrics (uptime, temperature, RAM, CPU)
   - SF₆ sensor data (density, pressure, temperature)
 
-**Note:** The current E-Ink display implementation provides a framework with ASCII preview via serial logs. For full graphics, integrate with:
-- [GxEPD2](https://github.com/ZinggJM/GxEPD2) library (Arduino, can be ported)
-- [Heltec E-Ink Library](https://github.com/todd-herbert/heltec-eink-modules)
-- [U8g2](https://github.com/olikraus/u8g2) with E-Paper support
-- Custom DEPG0290BNS800 driver
+**Note:** The display is fully implemented using the [Heltec E-Ink Library](https://github.com/todd-herbert/heltec-eink-modules) with custom bitmap font rendering. Display rotation can be configured in src/main.cpp (DISPLAY_ROTATION define).
 
 ## Hardware Requirements
 
@@ -160,7 +164,7 @@ The Vision Master E290 uses these GPIO pins for the 2.9" E-Ink display:
 | RST      | GPIO 5   | Reset |
 | BUSY     | GPIO 6   | Busy indicator |
 
-**Note:** These pins are pre-configured in `main/display.h`.
+**Note:** These pins are pre-configured by the Heltec E-Ink library for Vision Master E290.
 
 ### Display Layout
 
@@ -184,57 +188,32 @@ The display shows Modbus register data in a structured layout:
 
 ### Viewing Display Output
 
-Currently, the display system outputs an **ASCII preview** to the serial console every 30 seconds:
+The display system renders graphics directly to the E-Ink screen every 30 seconds. To monitor system output via serial console:
 
 ```bash
-# Monitor serial output to see display updates
-platformio run -e heltec_vision_master_e290 --target monitor
-```
-
-Example output:
-```
-╔════════════════════════════════════╗
-║  Vision Master E290 - Modbus RTU  ║
-╠════════════════════════════════════╣
-║ LoRaWAN: JOINED   TX:   42    ║
-╠════════════════════════════════════╣
-║ SYSTEM METRICS (Holding Regs)     ║
-║  Uptime:    12345 sec              ║
-║  Temp:       25.3°C                ║
-║  Free RAM:    234 KB               ║
-║  CPU Freq:    240 MHz              ║
-║  WiFi:      ON  (2 clients)        ║
-╠════════════════════════════════════╣
-║ SF6 SENSOR (Input Registers)      ║
-║  Density:   25.50 kg/m³            ║
-║  Pressure:  550.0 kPa              ║
-║  Temp:      293.0 K                ║
-║  Press Var: 550.0 kPa              ║
-╚════════════════════════════════════╝
-```
-
-### Enable/Disable Display
-
-Edit `main/display.h` to control the display:
-
-```c
-#define EINK_ENABLED    true    // Set to false to disable
+# Monitor serial output to see system status
+platformio run -e vision-master-e290-arduino --target monitor
 ```
 
 ### Display Update Frequency
 
-The display updates every **30 seconds** to conserve E-Ink refresh cycles. This can be adjusted in `main/main.c`:
+The display updates every **30 seconds** to conserve E-Ink refresh cycles. This can be adjusted in `src/main.cpp`:
 
-```c
-// In display_update_task()
-vTaskDelay(pdMS_TO_TICKS(30000));  // Change 30000 to desired ms
+```cpp
+// In loop() function - search for "Display update (every 30 seconds)"
+if (now - last_display_update >= 30000) {  // Change 30000 to desired ms
+    last_display_update = now;
+    update_display();
+}
 ```
 
-**Important:** E-Ink displays have limited refresh cycles (~1 million for the entire display). Use:
-- **Partial refresh** for frequent updates (faster, may cause ghosting)
-- **Full refresh** periodically (slower, clearer image)
+### Display Rotation
 
-The code automatically does a full refresh every 10 updates.
+The display orientation can be configured in `src/main.cpp`:
+
+```cpp
+#define DISPLAY_ROTATION 3  // 0=Portrait, 1=Landscape, 2=Portrait inverted, 3=Landscape inverted
+```
 
 ## LoRaWAN Configuration
 
@@ -254,35 +233,27 @@ The Vision Master E290 has a built-in SX1262 LoRa transceiver that can be used f
 
 ### Configuring LoRaWAN
 
-Edit `main/lorawan_config.h`:
+Edit `src/main.cpp` (lines 101-130) to configure your LoRaWAN credentials:
 
-```c
-// Enable/Disable LoRaWAN
-#define LORAWAN_ENABLED         true
+```cpp
+// LoRaWAN Configuration
+#define LORAWAN_ENABLED true
 
-// Set your region
-#define LORAWAN_REGION          LORAWAN_REGION_US915  // or EU868, AS923, AU915
+// LoRaWAN Credentials (OTAA)
+// Replace with your credentials from The Things Network or your LoRaWAN provider
+uint64_t joinEUI = 0x0000000000000000;  // Replace with your JoinEUI (AppEUI)
+uint64_t devEUI  = 0x0000000000000000;  // Replace with your DevEUI
+uint8_t appKey[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};  // Replace with AppKey
+uint8_t nwkKey[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};  // Replace with NwkKey
 
-// Set your credentials (replace these!)
-static const uint8_t LORAWAN_DEVEUI[8] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // Replace with your DevEUI
-};
+// LoRaWAN Region: EU868 (default), US915, AS923, AU915, etc.
+// To change region, modify the LoRaWANNode initialization in setup()
+// Example: LoRaWANNode node(&radio, &US915);
 
-static const uint8_t LORAWAN_APPEUI[8] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00  // Replace with your AppEUI
-};
-
-static const uint8_t LORAWAN_APPKEY[16] = {
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Replace with
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00   // your AppKey
-};
-
-// Transmission interval (milliseconds)
+// Transmission interval
 #define LORAWAN_TX_INTERVAL_MS  60000  // Send every 60 seconds
-
-// Select which data to send
-#define SEND_HOLDING_REGISTERS      true    // ESP32 system metrics
-#define SEND_INPUT_REGISTERS        true    // SF₆ sensor data
 ```
 
 ### SX1262 Pin Configuration
@@ -299,7 +270,7 @@ The Vision Master E290 uses these GPIO pins for the SX1262 LoRa module:
 | BUSY     | GPIO 13  | Busy indicator |
 | DIO1     | GPIO 14  | IRQ interrupt |
 
-**Note:** These pins are pre-configured in `lorawan_config.h`. Verify they match your board.
+**Note:** These pins are pre-configured in `src/main.cpp` for the Vision Master E290.
 
 ### LoRaWAN Payload Format
 
@@ -320,33 +291,17 @@ Byte 15-16:  SF₆ Temperature (×10, uint16_t)
 Byte 17-18:  SF₆ Pressure Variance (×10, uint16_t)
 ```
 
-### Completing the LoRaWAN Implementation
+### LoRaWAN Implementation Details
 
-The current code provides a **framework** for LoRaWAN. To make it fully functional:
+The project uses **RadioLib** (v7.4.0+) for full LoRaWAN functionality:
 
-#### Option 1: Use RadioLib (Recommended for ESP-IDF)
+- **OTAA Join:** Automatic Over-The-Air Activation with credential management
+- **Session Persistence:** Join sessions saved to NVS, survives reboots
+- **Uplink/Downlink:** Both supported with proper MAC command handling
+- **Region Support:** Configured for EU868, can be changed to US915, AS923, AU915, etc.
+- **Status Display:** Join status and uplink counter shown on E-Ink display
 
-1. Add RadioLib to your project:
-   ```bash
-   cd components
-   git clone https://github.com/jgromes/RadioLib.git
-   ```
-
-2. Modify `lorawan.c` to use RadioLib's SX1262 and LoRaWAN classes
-
-3. Implement proper OTAA join and uplink/downlink handling
-
-#### Option 2: Port Heltec's LoRaWAN Library
-
-1. The Heltec library is Arduino-based but can be adapted for ESP-IDF
-2. Reference: https://github.com/HelTecAutomation/Heltec_ESP32
-3. Extract the LoRaWAN MAC layer and SX1262 driver
-
-#### Option 3: Use LoRaMac-node
-
-1. Integrate the official Semtech LoRaMac-node stack
-2. Port the necessary files to ESP-IDF
-3. Configure for SX1262 hardware
+The LoRaWAN stack is fully operational - just configure your credentials in `src/main.cpp`.
 
 ### Decoding LoRaWAN Payloads
 
@@ -393,10 +348,30 @@ On boot, the device creates a WiFi Access Point for 20 minutes:
 
 - **SSID:** `ESP32-Modbus-Config`
 - **Password:** `modbus123`
-- **Web Interface:** https://192.168.4.1 (HTTPS with self-signed certificate)
+- **Web Interface (AP Mode):** https://192.168.4.1
+- **Web Interface (Client Mode):** https://stationsdata.local
 - **Authentication:** Username: `admin`, Password: `admin` (change immediately!)
 
 **Note:** Your browser will show a security warning due to the self-signed certificate. This is expected - click "Advanced" and proceed to accept the certificate.
+
+### mDNS Support
+
+The device supports **mDNS (Multicast DNS)** for easy access without needing to know the IP address:
+
+- **Hostname:** `stationsdata.local`
+- **Access in AP Mode:** Use https://192.168.4.1 or https://stationsdata.local
+- **Access in Client Mode:** Use https://stationsdata.local (when connected to your WiFi network)
+
+**Benefits:**
+- No need to find the device's IP address after connecting to your network
+- Consistent URL regardless of DHCP assignment
+- Works on all major operating systems (Windows, macOS, Linux)
+
+**Requirements:**
+- Windows: Install [Bonjour Print Services](https://support.apple.com/kb/DL999) if mDNS doesn't work
+- macOS/iOS: mDNS works natively (built-in)
+- Linux: Install `avahi-daemon` package (usually pre-installed)
+- Android: mDNS support varies by device/browser
 
 ### Web Interface Features
 
@@ -438,6 +413,7 @@ The web interface is organized into multiple tabs with HTTP Basic Authentication
    - Scan for available networks
    - View connection status and IP address
    - AP mode automatically disabled when connected as client
+   - Access device via https://stationsdata.local after connecting
 
 6. **Security Tab:**
    - Change web interface username and password
@@ -445,7 +421,23 @@ The web interface is organized into multiple tabs with HTTP Basic Authentication
    - Credentials stored securely in NVS
    - Default credentials: username `admin`, password `admin`
 
-**Note:** The web interface is protected by HTTP Basic Authentication. You'll be prompted for credentials when accessing any page. WiFi AP automatically turns off 20 minutes after boot (or immediately when connected as WiFi client) to save power.
+**WiFi Modes:**
+
+The device supports two WiFi modes:
+
+1. **Access Point (AP) Mode:**
+   - Creates its own WiFi network on boot
+   - SSID: `ESP32-Modbus-Config`
+   - Access via: https://192.168.4.1 or https://stationsdata.local
+   - Automatically disables after 20 minutes or when connected as client
+
+2. **Client (Station) Mode:**
+   - Connects to your existing WiFi network
+   - Configure via WiFi tab in web interface
+   - Access via: https://stationsdata.local (or device IP address)
+   - AP mode automatically disabled when connected
+
+**Note:** The web interface is protected by HTTP Basic Authentication. You'll be prompted for credentials when accessing any page.
 
 ## Modbus Register Map
 
@@ -502,21 +494,21 @@ The web interface is organized into multiple tabs with HTTP Basic Authentication
 ### Prerequisites
 
 - [PlatformIO](https://platformio.org/) installed
-- ESP-IDF framework (automatically installed by PlatformIO)
+- Arduino framework for ESP32 (automatically installed by PlatformIO)
 - Vision Master E290 connected via USB Type-C
 
 ### Build for Vision Master E290
 
-The project is now pre-configured for the Vision Master E290:
+The project is pre-configured for the Vision Master E290:
 
 ```bash
-platformio run -e heltec_vision_master_e290
+platformio run -e vision-master-e290-arduino
 ```
 
 ### Upload to E290
 
 ```bash
-platformio run -e heltec_vision_master_e290 --target upload
+platformio run -e vision-master-e290-arduino --target upload
 ```
 
 **Note:** You may need to hold the BOOT button (on the E290) while connecting USB or during upload to enter programming mode.
@@ -524,20 +516,20 @@ platformio run -e heltec_vision_master_e290 --target upload
 ### Monitor
 
 ```bash
-platformio run -e heltec_vision_master_e290 --target monitor
+platformio run -e vision-master-e290-arduino --target monitor
 ```
 
 Or combine upload and monitor:
 
 ```bash
-platformio run -e heltec_vision_master_e290 --target upload --target monitor
+platformio run -e vision-master-e290-arduino --target upload --target monitor
 ```
 
 ### Troubleshooting Build Issues
 
 If you encounter build issues:
 
-1. **Clean the build:** `platformio run -e heltec_vision_master_e290 -t clean`
+1. **Clean the build:** `platformio run -e vision-master-e290-arduino -t clean`
 2. **Update PlatformIO:** `platformio upgrade`
 3. **Delete build cache:** Remove the `.pio` directory and rebuild
 
@@ -648,54 +640,46 @@ client.close()
 ## Expected Output
 
 ```
-I (XXX) MB_SLAVE: ========================================
-I (XXX) MB_SLAVE: ESP32-S3 Modbus RTU Slave with HW-519
-I (XXX) MB_SLAVE: ========================================
-I (XXX) MB_SLAVE: Slave Address: 1
-I (XXX) MB_SLAVE: Baudrate: 9600
-I (XXX) MB_SLAVE: UART Port: 1
-I (XXX) MB_SLAVE: TX Pin: GPIO18 (HW-519 TXD)
-I (XXX) MB_SLAVE: RX Pin: GPIO16 (HW-519 RXD)
-I (XXX) MB_SLAVE: ========================================
-I (XXX) MB_SLAVE: Starting WiFi AP for configuration...
-I (XXX) MB_SLAVE: WiFi AP started. SSID:ESP32-Modbus-Config Password:modbus123 Channel:1
-I (XXX) MB_SLAVE: Connect to http://192.168.4.1 to configure
-I (XXX) MB_SLAVE: AP will automatically turn off in 20 minutes
-I (XXX) MB_SLAVE: Starting web server on port: 80
-I (XXX) MB_SLAVE: Holding registers initialized:
-I (XXX) MB_SLAVE:   Register 0 (Sequential Counter): 0
-I (XXX) MB_SLAVE:   Register 1 (Random Number): 12345
-I (XXX) MB_SLAVE:   ...
-I (XXX) MB_SLAVE: Input registers initialized:
-I (XXX) MB_SLAVE:   Register 1 (SF6 Density): 25.50 kg/m³
-I (XXX) MB_SLAVE:   Register 2 (SF6 Pressure @20C): 550.0 kPa
-I (XXX) MB_SLAVE:   Register 3 (SF6 Temperature): 293.0 K
-I (XXX) MB_SLAVE:   ...
-I (XXX) MB_SLAVE: Modbus slave stack initialized successfully
-I (XXX) MB_SLAVE: SF6 sensor emulation task started - values will update every 3 seconds
-I (XXX) MB_SLAVE: Modbus Holding Registers (0-11):
-I (XXX) MB_SLAVE:   Address 0: Sequential Counter (Read/Write)
-I (XXX) MB_SLAVE:   ...
-I (XXX) MB_SLAVE: Modbus Input Registers (0-8):
-I (XXX) MB_SLAVE:   Address 0: SF6 Gas Density (×0.01 kg/m³)
-I (XXX) MB_SLAVE:   ...
-I (XXX) MB_SLAVE: Waiting for Modbus master requests...
-I (XXX) MB_SLAVE: Random number updated: 54321
-I (XXX) MB_SLAVE: HOLDING READ: Addr=0, Size=2, Value[0]=0, Value[1]=54321
-I (XXX) MB_SLAVE: INPUT READ: Addr=0, Size=3
-I (XXX) MB_SLAVE:   SF6 Density: 25.32 kg/m³
-I (XXX) MB_SLAVE: Sequential counter incremented to: 1
-I (XXX) MB_SLAVE: AP timeout reached - shutting down WiFi AP
-I (XXX) MB_SLAVE: WiFi AP stopped - device now running in Modbus-only mode
+========================================
+Vision Master E290 - Modbus RTU Slave
+Firmware: v1.38
+========================================
+
+Modbus RTU Configuration:
+  Slave ID: 1
+  UART1: TX=GPIO43, RX=GPIO44, Baud=9600
+
+Display initialized (rotation: 3)
+Display updated
+
+Modbus RTU slave started on UART1
+Slave ID: 1
+
+WiFi AP Configuration:
+  SSID: ESP32-Modbus-Config
+  Password: modbus123
+  IP: 192.168.4.1
+  mDNS: stationsdata.local
+  Connect to: https://192.168.4.1 or https://stationsdata.local
+  AP timeout: 20 minutes
+
+Web server started on port 443 (HTTPS)
+mDNS responder started: stationsdata.local
+
+LoRaWAN: Attempting OTAA join...
+[LoRaWAN status updates will appear here]
+
+Modbus and web interface ready
+Waiting for connections...
 ```
 
 ## Troubleshooting
 
 ### No Communication
 
-1. **Check wiring:** 
-   - TX (GPIO18) → HW-519 TXD
-   - RX (GPIO16) → HW-519 RXD
+1. **Check wiring:**
+   - TX (GPIO43) → HW-519 TXD
+   - RX (GPIO44) → HW-519 RXD
    - 5V → HW-519 VCC (not 3.3V!)
    - GND → HW-519 GND
    - A/B to RS485 bus (try swapping if needed)
@@ -721,57 +705,63 @@ I (XXX) MB_SLAVE: WiFi AP stopped - device now running in Modbus-only mode
 
 ### Change Slave Address
 
-Edit in `main/main.c`:
-```c
-#define MB_SLAVE_ADDR   (1)     // Change to your desired address (1-247)
+The slave address can be changed via the web interface (Configuration tab) or by editing `src/main.cpp`:
+```cpp
+#define MB_SLAVE_ID_DEFAULT 1   // Change to your desired address (1-247)
 ```
+
+Changes via web interface take effect immediately and are saved to NVS.
 
 ### Change Baud Rate
 
-Edit in `main/main.c`:
-```c
-#define MB_DEV_SPEED    (9600)  // Change to 115200, 19200, etc.
+Edit in `src/main.cpp`:
+```cpp
+#define MB_UART_BAUD    9600    // Change to 115200, 19200, etc.
 ```
 
 ### Change Pins
 
-Edit in `main/main.c`:
-```c
-#define MB_UART_TXD     (17)    // TX pin - HW-519 TXD (GPIO17 on E290)
-#define MB_UART_RXD     (18)    // RX pin - HW-519 RXD (GPIO18 on E290)
+Edit in `src/main.cpp` (lines 53-55):
+```cpp
+#define MB_UART_NUM         1        // UART1
+#define MB_UART_TX          43       // GPIO 43 - TX pin to HW-519 TXD
+#define MB_UART_RX          44       // GPIO 44 - RX pin to HW-519 RXD
 // RTS not used with HW-519 (automatic flow control)
 ```
 
 **Important:** When changing pins on the Vision Master E290, avoid these GPIO pins:
 - GPIO1-6: Used by E-Ink display (MOSI, SCK, CS, DC, RST, BUSY)
-- GPIO21: Custom button
-- GPIO38-39: GPS interface (if using GPS module)
-- Other LoRa module pins (consult E290 documentation)
+- GPIO8-14: Used by SX1262 LoRa module (NSS, SCK, MOSI, MISO, RST, BUSY, DIO1)
+- GPIO18, 46: E-Ink power control
+- Other peripherals as documented in the pinout
 
 ### Add More Registers
 
-Modify the `holding_reg_params_t` or `input_reg_params_t` structure:
-```c
-typedef struct {
+Modify the register structures in `src/main.cpp` (lines 69-94):
+```cpp
+struct HoldingRegisters {
     uint16_t sequential_counter;
     uint16_t random_number;
     uint16_t new_register1;      // Add new registers
     uint16_t new_register2;
     // ... etc
-} holding_reg_params_t;
+} holding_regs;
+
+struct InputRegisters {
+    uint16_t sf6_density;
+    uint16_t sf6_pressure_20c;
+    uint16_t new_register1;      // Add new registers
+    // ... etc
+} input_regs;
 ```
 
-Don't forget to update:
-```c
-#define MB_REG_HOLDING_SIZE     (4)  // Update count
-#define MB_REG_INPUT_SIZE       (9)  // Update if adding input registers
-```
+Update the Modbus register handler callbacks and web interface HTML accordingly.
 
 ### Customize SF₆ Sensor Emulation
 
 #### Method 1: Web Interface (Recommended)
 
-Use the web interface at http://192.168.4.1/registers:
+Use the web interface at https://192.168.4.1/registers:
 1. Navigate to the "Registers" tab
 2. Use the **SF6 Manual Control** panel
 3. Enter desired values:
@@ -902,20 +892,21 @@ res->setStatusCode(204);  // ⚠️ Crash point
 
 ### ESP32-S3 Hardware Security Features
 
-For production firmware, enable these ESP-IDF security features:
+For production firmware, consider enabling ESP32-S3 security features via PlatformIO build flags in `platformio.ini`:
 
-```
-CONFIG_SECURE_BOOT_V2_ENABLED=y          # Secure Boot V2
-CONFIG_SECURE_FLASH_ENC_ENABLED=y        # Flash Encryption
-CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=y      # Memory Protection
-CONFIG_HEAP_POISONING_COMPREHENSIVE=y     # Heap Corruption Detection
-CONFIG_FREERTOS_CHECK_STACKOVERFLOW=2     # Stack Overflow Detection
+```ini
+build_flags =
+    -D CONFIG_SECURE_BOOT_V2_ENABLED=1
+    -D CONFIG_SECURE_FLASH_ENC_ENABLED=1
+    -D CONFIG_ESP_SYSTEM_MEMPROT_FEATURE=1
 ```
 
-**Efuse Settings (one-way, test thoroughly first):**
-- Disable JTAG debugging
-- Disable USB Serial/JTAG (if not needed)
-- Enable download mode protection
+**Note:** Secure boot and flash encryption are permanent one-way operations. Test thoroughly in development before enabling in production.
+
+**Additional Security:**
+- Enable Arduino OTA updates with authentication
+- Use ESP32 efuse settings to disable JTAG
+- Implement firmware signing for updates
 
 ### Secure Coding Practices
 
@@ -956,13 +947,23 @@ CONFIG_FREERTOS_CHECK_STACKOVERFLOW=2     # Stack Overflow Detection
 
 For a detailed security review, see the analysis performed on this codebase.
 
-## License
+## Project History
 
-This project is based on the ESP-IDF Modbus example from Espressif Systems.
+This project was originally developed using ESP-IDF framework and has been converted to Arduino framework for better library compatibility and easier development. The core Modbus functionality is inspired by Espressif's Modbus examples.
+
+## Library Dependencies
+
+The project uses the following key libraries (automatically installed by PlatformIO):
+
+- **heltec-eink-modules** - E-Ink display driver for Vision Master E290
+- **modbus-esp8266** - Modbus RTU implementation for Arduino
+- **RadioLib** - LoRaWAN stack with SX1262 support
+- **HTTPS_Server_Generic** - HTTPS web server with SSL/TLS
 
 ## References
 
-- [ESP-IDF Modbus Documentation](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/protocols/modbus.html)
-- [Espressif esp-modbus GitHub](https://github.com/espressif/esp-modbus)
 - [Modbus Protocol Specification](https://modbus.org/specs.php)
+- [RadioLib Documentation](https://github.com/jgromes/RadioLib)
+- [Heltec E-Ink Library](https://github.com/todd-herbert/heltec-eink-modules)
+- [Vision Master E290 Hardware](https://heltec.org/project/vision-master-e290/)
 - [HW-519 RS485 Module Information](https://www.google.com/search?q=HW-519+RS485+module)
