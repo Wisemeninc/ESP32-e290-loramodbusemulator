@@ -4,7 +4,7 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 
 **Framework:** Arduino (via PlatformIO)
 **Platform:** Espressif32 (ESP32-S3)
-**Current Version:** v1.42
+**Current Version:** v1.43
 
 **Key Highlights:**
 - 🔧 **12 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
@@ -369,11 +369,13 @@ function decodeUplink(input) {
 
 On boot, the device creates a WiFi Access Point for 20 minutes:
 
-- **SSID:** `ESP32-Modbus-Config`
-- **Password:** `modbus123`
+- **SSID:** `ESP32-Modbus-Config-XXXX` (XXXX = last 4 hex digits of device MAC address)
+- **Password:**
+  - Development mode: `modbus123` (default, fixed)
+  - Production mode: Auto-generated 16-character password (shown on E-Ink display)
 - **Web Interface (AP Mode):** https://192.168.4.1
 - **Web Interface (Client Mode):** https://stationsdata.local
-- **Authentication:** Username: `admin`, Password: `admin` (change immediately!)
+- **Web Authentication:** Username: `admin`, Password: `admin` (change immediately!)
 
 **Note:** Your browser will show a security warning due to the self-signed certificate. This is expected - click "Advanced" and proceed to accept the certificate.
 
@@ -450,15 +452,27 @@ The device supports two WiFi modes:
 
 1. **Access Point (AP) Mode:**
    - Creates its own WiFi network on boot
-   - SSID: `ESP32-Modbus-Config`
+   - SSID: `ESP32-Modbus-Config-XXXX` (XXXX = last 4 hex digits of MAC address)
+   - Password:
+     - Development mode (`MODE_PRODUCTION = false`): `modbus123`
+     - Production mode (`MODE_PRODUCTION = true`): Auto-generated 16-character password, displayed on E-Ink screen for 20 seconds
+   - IP Address: `192.168.4.1`
    - Access via: https://192.168.4.1 or https://stationsdata.local
    - Automatically disables after 20 minutes or when connected as client
+   - Supports up to 4 simultaneous clients
 
 2. **Client (Station) Mode:**
    - Connects to your existing WiFi network
    - Configure via WiFi tab in web interface
    - Access via: https://stationsdata.local (or device IP address)
    - AP mode automatically disabled when connected
+   - WiFi remains active indefinitely (no timeout)
+   - Auto-reconnects if connection is lost
+
+**Production vs Development Mode:**
+- Set in `src/main.cpp` line 38: `#define MODE_PRODUCTION false`
+- Development mode: Fixed password `modbus123` (easier for testing)
+- Production mode: Random password generated on first boot, saved to NVS, displayed on screen
 
 **Note:** The web interface is protected by HTTP Basic Authentication. You'll be prompted for credentials when accessing any page.
 
@@ -665,7 +679,7 @@ client.close()
 ```
 ========================================
 Vision Master E290 - Modbus RTU Slave
-Firmware: v1.42
+Firmware: v1.43
 ========================================
 
 Modbus RTU Configuration:
@@ -679,8 +693,8 @@ Modbus RTU slave started on UART1
 Slave ID: 1
 
 WiFi AP Configuration:
-  SSID: ESP32-Modbus-Config
-  Password: modbus123
+  SSID: ESP32-Modbus-Config-A1B2
+  Password: modbus123 (or auto-generated in production mode)
   IP: 192.168.4.1
   mDNS: stationsdata.local
   Connect to: https://192.168.4.1 or https://stationsdata.local
