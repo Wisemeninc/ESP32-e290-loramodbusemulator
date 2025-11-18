@@ -4,7 +4,7 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 
 **Framework:** Arduino (via PlatformIO)
 **Platform:** Espressif32 (ESP32-S3)
-**Current Version:** v1.41
+**Current Version:** v1.42
 
 **Key Highlights:**
 - 🔧 **12 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
@@ -267,10 +267,16 @@ LoRaWANNode node(&radio, &US915);
 
 **To change transmission interval:**
 
-Edit `src/main.cpp` (line ~127):
+Edit `src/main.cpp` in the `loop()` function (line ~365):
 
 ```cpp
-#define LORAWAN_TX_INTERVAL_MS  60000  // Send every 60 seconds (change as needed)
+// Send LoRaWAN uplink every 5 minutes (if joined)
+if (lorawan_joined && (now - last_lorawan_uplink >= 300000)) {  // 300000ms = 5 minutes
+    last_lorawan_uplink = now;
+    send_lorawan_uplink();
+}
+
+// Change to 1 minute (60000ms) or 10 minutes (600000ms) as needed
 ```
 
 ### SX1262 Pin Configuration
@@ -659,7 +665,7 @@ client.close()
 ```
 ========================================
 Vision Master E290 - Modbus RTU Slave
-Firmware: v1.40
+Firmware: v1.42
 ========================================
 
 Modbus RTU Configuration:
