@@ -4,7 +4,7 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 
 **Framework:** Arduino (via PlatformIO)
 **Platform:** Espressif32 (ESP32-S3)
-**Current Version:** v1.40
+**Current Version:** v1.41
 
 **Key Highlights:**
 - 🔧 **12 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
@@ -71,7 +71,7 @@ https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Meshtasti
 - **Uplink and downlink** handling
 - **Join status monitoring** on E-Ink display
 
-**Note:** LoRaWAN is fully implemented using [RadioLib](https://github.com/jgromes/RadioLib). Configure your credentials (DevEUI, JoinEUI, AppKey, NwkKey) in src/main.cpp lines 101-130. Default region is EU868.
+**Note:** LoRaWAN is fully implemented using [RadioLib](https://github.com/jgromes/RadioLib). Credentials are auto-generated on first boot and can be viewed/modified via the web interface. Default region is EU868.
 
 ### E-Ink Display Features
 - **2.9" E-Paper display** (296×128 pixels, black and white)
@@ -219,41 +219,58 @@ The display orientation can be configured in `src/main.cpp`:
 
 ### Getting LoRaWAN Credentials
 
-The Vision Master E290 has a built-in SX1262 LoRa transceiver that can be used for LoRaWAN communication.
+The Vision Master E290 **automatically generates unique LoRaWAN credentials on first boot**:
 
-1. **Register your device** with a LoRaWAN network provider:
+- **DevEUI** - Generated from ESP32 MAC address (ensures uniqueness)
+- **JoinEUI (AppEUI)** - Randomly generated 8 bytes
+- **AppKey** - Randomly generated 16 bytes
+- **NwkKey** - Copy of AppKey (for LoRaWAN 1.0.x compatibility)
+
+**On first boot, the credentials are:**
+1. Automatically generated using hardware RNG
+2. Saved to NVS (Non-Volatile Storage)
+3. Printed to serial console
+4. Displayed in the web interface (LoRaWAN tab)
+
+**To register your device:**
+1. Boot the device and check serial console for credentials, or
+2. Connect to web interface at https://stationsdata.local
+3. Navigate to **LoRaWAN tab** to view credentials
+4. Copy credentials to your LoRaWAN network server:
    - [The Things Network (TTN)](https://www.thethingsnetwork.org/) - Free, community-run
    - [Chirpstack](https://www.chirpstack.io/) - Self-hosted option
    - Commercial providers (AWS IoT, Helium, etc.)
 
-2. **Get your credentials:**
-   - **DevEUI** (Device EUI) - 8 bytes, unique device identifier
-   - **AppEUI** (Application EUI) - 8 bytes, identifies the application
-   - **AppKey** (Application Key) - 16 bytes, secret key for OTAA join
-
 ### Configuring LoRaWAN
 
-Edit `src/main.cpp` (lines 101-130) to configure your LoRaWAN credentials:
+**Credentials are automatically generated on first boot** - no manual configuration needed!
+
+**To view or change credentials:**
+1. Access web interface at https://stationsdata.local
+2. Navigate to **LoRaWAN tab**
+3. View current credentials
+4. (Optional) Update credentials if needed
+
+**To change LoRaWAN region:**
+
+Edit `src/main.cpp` (line ~3089) to change from EU868 to another region:
 
 ```cpp
-// LoRaWAN Configuration
-#define LORAWAN_ENABLED true
+// Current: EU868 (default)
+LoRaWANNode node(&radio, &EU868);
 
-// LoRaWAN Credentials (OTAA)
-// Replace with your credentials from The Things Network or your LoRaWAN provider
-uint64_t joinEUI = 0x0000000000000000;  // Replace with your JoinEUI (AppEUI)
-uint64_t devEUI  = 0x0000000000000000;  // Replace with your DevEUI
-uint8_t appKey[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};  // Replace with AppKey
-uint8_t nwkKey[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-                    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};  // Replace with NwkKey
+// Change to US915:
+LoRaWANNode node(&radio, &US915);
 
-// LoRaWAN Region: EU868 (default), US915, AS923, AU915, etc.
-// To change region, modify the LoRaWANNode initialization in setup()
-// Example: LoRaWANNode node(&radio, &US915);
+// Other options: AS923, AU915, IN865, etc.
+```
 
-// Transmission interval
-#define LORAWAN_TX_INTERVAL_MS  60000  // Send every 60 seconds
+**To change transmission interval:**
+
+Edit `src/main.cpp` (line ~127):
+
+```cpp
+#define LORAWAN_TX_INTERVAL_MS  60000  // Send every 60 seconds (change as needed)
 ```
 
 ### SX1262 Pin Configuration
@@ -642,7 +659,7 @@ client.close()
 ```
 ========================================
 Vision Master E290 - Modbus RTU Slave
-Firmware: v1.38
+Firmware: v1.40
 ========================================
 
 Modbus RTU Configuration:
@@ -665,6 +682,19 @@ WiFi AP Configuration:
 
 Web server started on port 443 (HTTPS)
 mDNS responder started: stationsdata.local
+
+LoRaWAN Device Credentials
+========================================
+JoinEUI (AppEUI): 0x1234567890ABCDEF
+DevEUI:           0xAABBCCDDEEFF0011
+AppKey:           0x00112233445566778899AABBCCDDEEFF
+NwkKey:           0x00112233445566778899AABBCCDDEEFF
+========================================
+Copy these credentials to your network server:
+  - The Things Network (TTN)
+  - Chirpstack
+  - AWS IoT Core for LoRaWAN
+========================================
 
 LoRaWAN: Attempting OTAA join...
 [LoRaWAN status updates will appear here]

@@ -41,7 +41,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 140  // v1.40 - Added mDNS documentation (stationsdata.local) to README
+#define FIRMWARE_VERSION 141  // v1.41 - Updated README: LoRaWAN credentials auto-generated on first boot
 
 // E-Ink display for Vision Master E290
 EInkDisplay_VisionMasterE290 display;
