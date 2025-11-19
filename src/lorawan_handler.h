@@ -27,11 +27,30 @@ public:
     // Uplink/Downlink
     bool sendUplink(const InputRegisters& input);
 
-    // Credentials management
+    // Credentials management (legacy - for backward compatibility)
     void loadCredentials();
     void saveCredentials();
     void generateCredentials();
     void printCredentials();
+
+    // Profile management (new multi-profile system)
+    void loadProfiles();
+    void saveProfiles();
+    void initializeDefaultProfiles();
+    void generateProfile(uint8_t index, const char* name);
+    bool setActiveProfile(uint8_t index);
+    uint8_t getActiveProfileIndex() const;
+    LoRaProfile* getProfile(uint8_t index);
+    bool updateProfile(uint8_t index, const LoRaProfile& profile);
+    bool toggleProfileEnabled(uint8_t index);
+    void printProfile(uint8_t index);
+    
+    // Auto-rotation (cycle through multiple profiles)
+    void setAutoRotation(bool enabled);
+    bool getAutoRotation() const;
+    bool rotateToNextProfile();
+    uint8_t getNextEnabledProfile() const;
+    int getEnabledProfileCount() const;
 
     // Session persistence (nonces only - session restore not working in RadioLib 7.4.0)
     void saveSession();
@@ -55,11 +74,16 @@ private:
     SX1262* radio;
     LoRaWANNode* node;
 
-    // LoRaWAN credentials (OTAA)
+    // LoRaWAN credentials (OTAA) - legacy, kept for backward compatibility
     uint64_t joinEUI;  // AppEUI (MSB)
     uint64_t devEUI;   // DevEUI (MSB)
     uint8_t appKey[16]; // 128-bit AppKey (MSB)
     uint8_t nwkKey[16]; // 128-bit NwkKey (MSB)
+
+    // Multi-profile system
+    LoRaProfile profiles[MAX_LORA_PROFILES];
+    uint8_t active_profile_index;
+    bool auto_rotation_enabled;
 
     // Status
     bool joined;

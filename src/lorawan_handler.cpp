@@ -13,6 +13,8 @@ LoRaWANHandler::LoRaWANHandler() :
     node(nullptr),
     joinEUI(0),
     devEUI(0),
+    active_profile_index(0),
+    auto_rotation_enabled(false),
     joined(false),
     uplink_count(0),
     downlink_count(0),
@@ -21,6 +23,13 @@ LoRaWANHandler::LoRaWANHandler() :
 
     memset(appKey, 0, sizeof(appKey));
     memset(nwkKey, 0, sizeof(nwkKey));
+    
+    // Initialize all profiles to empty
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        memset(&profiles[i], 0, sizeof(LoRaProfile));
+        profiles[i].enabled = false;
+        snprintf(profiles[i].name, sizeof(profiles[i].name), "Profile %d", i);
+    }
 }
 
 // ============================================================================
@@ -48,9 +57,14 @@ void LoRaWANHandler::begin() {
     initializeRadio();
     configureRadio();
 
-    // Load credentials (generates if not present)
-    loadCredentials();
-    printCredentials();
+    // Load profiles (generates if not present) - New multi-profile system
+    loadProfiles();
+    
+    // Set active profile (loads credentials into legacy fields)
+    setActiveProfile(active_profile_index);
+    
+    // Print active profile info
+    printProfile(active_profile_index);
 
     // Create LoRaWAN node instance
     node = new LoRaWANNode(radio, &EU868);  // Change region as needed
@@ -466,6 +480,320 @@ void LoRaWANHandler::printCredentials() {
 }
 
 // ============================================================================
+// PROFILE MANAGEMENT
+// ============================================================================
+
+void LoRaWANHandler::loadProfiles() {
+    Serial.println(">>> Loading LoRaWAN profiles from NVS...");
+    
+    if (!preferences.begin("lorawan_prof", true)) {
+        Serial.println(">>> Failed to open lorawan_prof namespace");
+        initializeDefaultProfiles();
+        return;
+    }
+    
+    bool has_profiles = preferences.getBool("has_profiles", false);
+    active_profile_index = preferences.getUChar("active_idx", 0);
+    auto_rotation_enabled = preferences.getBool("auto_rotate", false);
+    
+    if (!has_profiles) {
+        Serial.println(">>> No profiles found - initializing defaults");
+        preferences.end();
+        initializeDefaultProfiles();
+        return;
+    }
+    
+    // Load each profile
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        char key[20];
+        snprintf(key, sizeof(key), "prof%d", i);
+        
+        size_t len = preferences.getBytes(key, &profiles[i], sizeof(LoRaProfile));
+        if (len == sizeof(LoRaProfile)) {
+            Serial.printf("    Loaded Profile %d: %s (%s)\n", 
+                i, profiles[i].name, profiles[i].enabled ? "enabled" : "disabled");
+        } else {
+            Serial.printf("    Warning: Profile %d load failed (got %d bytes)\n", i, len);
+        }
+    }
+    
+    preferences.end();
+    Serial.printf(">>> Active profile index: %d\n", active_profile_index);
+}
+
+void LoRaWANHandler::saveProfiles() {
+    Serial.println(">>> Saving LoRaWAN profiles to NVS...");
+    
+    if (!preferences.begin("lorawan_prof", false)) {
+        Serial.println(">>> Failed to open lorawan_prof namespace for writing");
+        return;
+    }
+    
+    preferences.putBool("has_profiles", true);
+    preferences.putUChar("active_idx", active_profile_index);
+    preferences.putBool("auto_rotate", auto_rotation_enabled);
+    
+    // Save each profile
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        char key[20];
+        snprintf(key, sizeof(key), "prof%d", i);
+        
+        size_t written = preferences.putBytes(key, &profiles[i], sizeof(LoRaProfile));
+        Serial.printf("    Saved Profile %d: %s (%d bytes)\n", 
+            i, profiles[i].name, written);
+    }
+    
+    preferences.end();
+    Serial.println(">>> Profiles saved to NVS");
+}
+
+void LoRaWANHandler::initializeDefaultProfiles() {
+    Serial.println(">>> Initializing default profiles...");
+    
+    // Generate first profile with unique credentials
+    generateProfile(0, "Profile 0");
+    profiles[0].enabled = true;  // First profile enabled by default
+    
+    // Initialize remaining profiles as disabled templates
+    for (int i = 1; i < MAX_LORA_PROFILES; i++) {
+        generateProfile(i, (String("Profile ") + String(i)).c_str());
+        profiles[i].enabled = false;
+    }
+    
+    active_profile_index = 0;
+    
+    // Save to NVS
+    saveProfiles();
+    
+    Serial.println(">>> Default profiles initialized");
+}
+
+void LoRaWANHandler::generateProfile(uint8_t index, const char* name) {
+    if (index >= MAX_LORA_PROFILES) {
+        Serial.printf(">>> Error: Invalid profile index %d\n", index);
+        return;
+    }
+    
+    LoRaProfile* prof = &profiles[index];
+    
+    // Set name
+    strncpy(prof->name, name, sizeof(prof->name) - 1);
+    prof->name[sizeof(prof->name) - 1] = '\0';
+    
+    // Seed random number generator
+    randomSeed(esp_random() + index);
+    
+    // Generate random JoinEUI (8 bytes)
+    prof->joinEUI = 0;
+    for (int i = 0; i < 8; i++) {
+        prof->joinEUI = (prof->joinEUI << 8) | (uint64_t)random(0, 256);
+    }
+    
+    // Generate DevEUI from ESP32 MAC address + random bytes for uniqueness
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    prof->devEUI = ((uint64_t)mac[0] << 56) | ((uint64_t)mac[1] << 48) |
+                   ((uint64_t)mac[2] << 40) | ((uint64_t)mac[3] << 32) |
+                   ((uint64_t)random(0, 256) << 24) | ((uint64_t)random(0, 256) << 16) |
+                   ((uint64_t)(random(0, 256) + index) << 8) | (uint64_t)random(0, 256);
+    
+    // Generate random AppKey (16 bytes)
+    for (int i = 0; i < 16; i++) {
+        prof->appKey[i] = random(0, 256);
+    }
+    
+    // Generate random NwkKey (16 bytes) - for LoRaWAN 1.0.x, copy AppKey
+    memcpy(prof->nwkKey, prof->appKey, 16);
+    
+    Serial.printf("    Generated Profile %d: %s\n", index, prof->name);
+    Serial.printf("      DevEUI: 0x%016llX\n", prof->devEUI);
+    Serial.printf("      JoinEUI: 0x%016llX\n", prof->joinEUI);
+}
+
+bool LoRaWANHandler::setActiveProfile(uint8_t index) {
+    if (index >= MAX_LORA_PROFILES) {
+        Serial.printf(">>> Error: Invalid profile index %d\n", index);
+        return false;
+    }
+    
+    if (!profiles[index].enabled) {
+        Serial.printf(">>> Error: Profile %d is disabled\n", index);
+        return false;
+    }
+    
+    Serial.printf(">>> Setting active profile to %d: %s\n", index, profiles[index].name);
+    
+    active_profile_index = index;
+    
+    // Copy profile credentials to legacy fields (for backward compatibility)
+    devEUI = profiles[index].devEUI;
+    joinEUI = profiles[index].joinEUI;
+    memcpy(appKey, profiles[index].appKey, 16);
+    memcpy(nwkKey, profiles[index].nwkKey, 16);
+    
+    // Save active index to NVS
+    if (preferences.begin("lorawan_prof", false)) {
+        preferences.putUChar("active_idx", active_profile_index);
+        preferences.end();
+    }
+    
+    Serial.println(">>> Active profile updated");
+    return true;
+}
+
+uint8_t LoRaWANHandler::getActiveProfileIndex() const {
+    return active_profile_index;
+}
+
+LoRaProfile* LoRaWANHandler::getProfile(uint8_t index) {
+    if (index >= MAX_LORA_PROFILES) {
+        return nullptr;
+    }
+    return &profiles[index];
+}
+
+bool LoRaWANHandler::updateProfile(uint8_t index, const LoRaProfile& profile) {
+    if (index >= MAX_LORA_PROFILES) {
+        Serial.printf(">>> Error: Invalid profile index %d\n", index);
+        return false;
+    }
+    
+    Serial.printf(">>> Updating profile %d\n", index);
+    
+    // Copy profile data
+    memcpy(&profiles[index], &profile, sizeof(LoRaProfile));
+    
+    // If this is the active profile, update legacy credentials
+    if (index == active_profile_index) {
+        devEUI = profile.devEUI;
+        joinEUI = profile.joinEUI;
+        memcpy(appKey, profile.appKey, 16);
+        memcpy(nwkKey, profile.nwkKey, 16);
+    }
+    
+    // Save to NVS
+    saveProfiles();
+    
+    Serial.println(">>> Profile updated");
+    return true;
+}
+
+bool LoRaWANHandler::toggleProfileEnabled(uint8_t index) {
+    if (index >= MAX_LORA_PROFILES) {
+        Serial.printf(">>> Error: Invalid profile index %d\n", index);
+        return false;
+    }
+    
+    // Don't allow disabling the active profile
+    if (index == active_profile_index && profiles[index].enabled) {
+        Serial.println(">>> Error: Cannot disable active profile");
+        return false;
+    }
+    
+    profiles[index].enabled = !profiles[index].enabled;
+    Serial.printf(">>> Profile %d %s\n", index, 
+        profiles[index].enabled ? "enabled" : "disabled");
+    
+    // Save to NVS
+    saveProfiles();
+    
+    return true;
+}
+
+void LoRaWANHandler::printProfile(uint8_t index) {
+    if (index >= MAX_LORA_PROFILES) {
+        Serial.printf(">>> Error: Invalid profile index %d\n", index);
+        return;
+    }
+    
+    LoRaProfile* prof = &profiles[index];
+    
+    Serial.println("\n========================================");
+    Serial.printf("LoRaWAN Profile %d: %s\n", index, prof->name);
+    Serial.println("========================================");
+    Serial.printf("Status:     %s\n", prof->enabled ? "ENABLED" : "DISABLED");
+    Serial.printf("JoinEUI:    0x%016llX\n", prof->joinEUI);
+    Serial.printf("DevEUI:     0x%016llX\n", prof->devEUI);
+    Serial.print("AppKey:     ");
+    for (int i = 0; i < 16; i++) {
+        if (prof->appKey[i] < 0x10) Serial.print("0");
+        Serial.print(prof->appKey[i], HEX);
+    }
+    Serial.println();
+    Serial.print("NwkKey:     ");
+    for (int i = 0; i < 16; i++) {
+        if (prof->nwkKey[i] < 0x10) Serial.print("0");
+        Serial.print(prof->nwkKey[i], HEX);
+    }
+    Serial.println();
+    Serial.println("========================================\n");
+}
+
+// ============================================================================
+// AUTO-ROTATION (MULTI-PROFILE CYCLING)
+// ============================================================================
+
+void LoRaWANHandler::setAutoRotation(bool enabled) {
+    auto_rotation_enabled = enabled;
+    Serial.printf(">>> Auto-rotation %s\n", enabled ? "enabled" : "disabled");
+    
+    // Save to NVS
+    if (preferences.begin("lorawan_prof", false)) {
+        preferences.putBool("auto_rotate", auto_rotation_enabled);
+        preferences.end();
+    }
+}
+
+bool LoRaWANHandler::getAutoRotation() const {
+    return auto_rotation_enabled;
+}
+
+uint8_t LoRaWANHandler::getNextEnabledProfile() const {
+    // Start searching from next profile after current
+    uint8_t start_index = (active_profile_index + 1) % MAX_LORA_PROFILES;
+    
+    // Search for next enabled profile
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        uint8_t check_index = (start_index + i) % MAX_LORA_PROFILES;
+        if (profiles[check_index].enabled) {
+            return check_index;
+        }
+    }
+    
+    // No other enabled profile found, return current
+    return active_profile_index;
+}
+
+bool LoRaWANHandler::rotateToNextProfile() {
+    if (!auto_rotation_enabled) {
+        Serial.println(">>> Auto-rotation is disabled");
+        return false;
+    }
+    
+    uint8_t next_index = getNextEnabledProfile();
+    
+    if (next_index == active_profile_index) {
+        Serial.println(">>> No other enabled profiles for rotation");
+        return false;
+    }
+    
+    Serial.printf(">>> Rotating from profile %d to profile %d\n", 
+        active_profile_index, next_index);
+    
+    return setActiveProfile(next_index);
+}
+
+int LoRaWANHandler::getEnabledProfileCount() const {
+    int count = 0;
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        if (profiles[i].enabled) {
+            count++;
+        }
+    }
+    return count;
+}
+
+// ============================================================================
 // SESSION PERSISTENCE
 // ============================================================================
 
@@ -487,12 +815,18 @@ void LoRaWANHandler::saveSession() {
         return;
     }
 
-    // Save ONLY nonces (not session - session restore returns -1120)
-    preferences.putBytes("nonces", noncesBuffer, noncesSize);
-    preferences.putBool("has_nonces", true);
+    // Save nonces per profile using profile-specific key
+    char noncesKey[16];
+    sprintf(noncesKey, "nonces_%d", active_profile_index);
+    char hasNoncesKey[16];
+    sprintf(hasNoncesKey, "has_nonces_%d", active_profile_index);
+    
+    preferences.putBytes(noncesKey, noncesBuffer, noncesSize);
+    preferences.putBool(hasNoncesKey, true);
     preferences.end();
 
-    Serial.printf(">>> Saved nonces (%d bytes) - DevNonce will persist across reboots\n", noncesSize);
+    Serial.printf(">>> Saved nonces (%d bytes) for Profile %d - DevNonce will persist across reboots\n", 
+        noncesSize, active_profile_index);
 }
 
 void LoRaWANHandler::loadSession() {
@@ -557,36 +891,43 @@ bool LoRaWANHandler::restoreNonces() {
         return false;
     }
 
-    bool hasNonces = preferences.getBool("has_nonces", false);
-    Serial.printf(">>> has_nonces flag: %s\n", hasNonces ? "true" : "false");
+    // Check for profile-specific nonces
+    char hasNoncesKey[16];
+    sprintf(hasNoncesKey, "has_nonces_%d", active_profile_index);
+    bool hasNonces = preferences.getBool(hasNoncesKey, false);
+    Serial.printf(">>> has_nonces flag for Profile %d: %s\n", active_profile_index, hasNonces ? "true" : "false");
     preferences.end();
 
     if (!hasNonces) {
+        Serial.printf(">>> No saved nonces found for Profile %d\n", active_profile_index);
         return false;
     }
 
-    Serial.println(">>> Found saved nonces - restoring...");
+    Serial.printf(">>> Found saved nonces for Profile %d - restoring...\n", active_profile_index);
 
     // Initialize node first
     node->beginOTAA(joinEUI, devEUI, nwkKey, appKey);
 
-    // Load ONLY nonces from NVS
+    // Load profile-specific nonces from NVS
     if (preferences.begin("lorawan", true)) {
         const size_t noncesSize = RADIOLIB_LORAWAN_NONCES_BUF_SIZE;
         uint8_t noncesBuffer[RADIOLIB_LORAWAN_NONCES_BUF_SIZE];
-        size_t noncesRead = preferences.getBytes("nonces", noncesBuffer, noncesSize);
+        
+        char noncesKey[16];
+        sprintf(noncesKey, "nonces_%d", active_profile_index);
+        size_t noncesRead = preferences.getBytes(noncesKey, noncesBuffer, noncesSize);
         preferences.end();
 
         if (noncesRead == noncesSize) {
-            Serial.printf(">>> Loaded nonces (%d bytes)\n", noncesRead);
+            Serial.printf(">>> Loaded nonces (%d bytes) for Profile %d\n", noncesRead, active_profile_index);
             int16_t state = node->setBufferNonces(noncesBuffer);
             Serial.printf(">>> setBufferNonces() returned: %d\n", state);
 
             if (state == RADIOLIB_ERR_NONE) {
-                Serial.println(">>> Nonces restored - DevNonce will continue from last value");
+                Serial.printf(">>> Nonces restored for Profile %d - DevNonce will continue from last value\n", active_profile_index);
                 return true;
             } else {
-                Serial.printf(">>> Nonces restore failed: %d\n", state);
+                Serial.printf(">>> Nonces restore failed for Profile %d: %d\n", active_profile_index, state);
             }
         }
     }

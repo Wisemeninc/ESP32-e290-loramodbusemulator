@@ -188,6 +188,11 @@ void handle_sf6_reset(HTTPRequest * req, HTTPResponse * res);
 void handle_config(HTTPRequest * req, HTTPResponse * res);
 void handle_lorawan(HTTPRequest * req, HTTPResponse * res);
 void handle_lorawan_config(HTTPRequest * req, HTTPResponse * res);
+void handle_lorawan_profiles(HTTPRequest * req, HTTPResponse * res);
+void handle_lorawan_profile_update(HTTPRequest * req, HTTPResponse * res);
+void handle_lorawan_profile_toggle(HTTPRequest * req, HTTPResponse * res);
+void handle_lorawan_profile_activate(HTTPRequest * req, HTTPResponse * res);
+void handle_lorawan_auto_rotate(HTTPRequest * req, HTTPResponse * res);
 void handle_wifi(HTTPRequest * req, HTTPResponse * res);
 void handle_reboot(HTTPRequest * req, HTTPResponse * res);
 // Old credential/config functions removed - now in component classes
@@ -252,20 +257,136 @@ void setup() {
     // Initialize LoRaWAN FIRST (before E-Ink display) - Phase 4 integration
     // This ensures LoRa radio gets clean SPI access
     // E-Ink will be initialized AFTER join completes to avoid SPI conflicts during RX
-    Serial.println("\n>>> Loading LoRaWAN credentials...");
-    // Old: load_lorawan_credentials(); print_lorawan_credentials(); setup_lorawan();
-    lorawanHandler.loadCredentials();
-    Serial.println(">>> Printing LoRaWAN credentials...");
-    lorawanHandler.printCredentials();
+    Serial.println("\n>>> Initializing LoRaWAN with multi-profile support...");
+    // begin() now loads profiles, sets active profile, and prints info
     lorawanHandler.begin();
-    lorawan_joined = lorawanHandler.join();  // Update global for web handler compatibility
-
-    // Send a test uplink immediately after successful join
-    if (lorawan_joined) {
-        Serial.println("\n>>> Sending immediate test uplink after join...");
-        delay(1000);  // Brief delay to ensure join is fully processed
-        update_input_registers();  // Update sensor data before uplink
-        lorawanHandler.sendUplink(input_regs);
+    
+    // Print all profile configurations
+    Serial.println("\n========================================");
+    Serial.println("LoRa Profile Configuration Summary");
+    Serial.println("========================================");
+    int enabled_count = lorawanHandler.getEnabledProfileCount();
+    Serial.printf("Auto-Rotation: %s\n", lorawanHandler.getAutoRotation() ? "ENABLED" : "DISABLED");
+    Serial.printf("Enabled Profiles: %d of %d\n", enabled_count, MAX_LORA_PROFILES);
+    Serial.printf("Active Profile: %d\n\n", lorawanHandler.getActiveProfileIndex());
+    
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        LoRaProfile* prof = lorawanHandler.getProfile(i);
+        if (!prof) continue;
+        
+        Serial.printf("Profile %d: %s\n", i, prof->name);
+        Serial.printf("  Status: %s\n", prof->enabled ? "ENABLED" : "DISABLED");
+        
+        char devEUIStr[17];
+        sprintf(devEUIStr, "%016llX", prof->devEUI);
+        Serial.printf("  DevEUI: 0x%s\n", devEUIStr);
+        
+        char joinEUIStr[17];
+        sprintf(joinEUIStr, "%016llX", prof->joinEUI);
+        Serial.printf("  JoinEUI: 0x%s\n", joinEUIStr);
+        
+        // Print full AppKey (16 bytes) for ChirpStack configuration
+        Serial.print("  AppKey: ");
+        for (int j = 0; j < 16; j++) {
+            Serial.printf("%02X", prof->appKey[j]);
+        }
+        Serial.println();
+        
+        // Print full NwkKey (16 bytes) for ChirpStack configuration
+        Serial.print("  NwkKey: ");
+        for (int j = 0; j < 16; j++) {
+            Serial.printf("%02X", prof->nwkKey[j]);
+        }
+        Serial.println();
+        
+        if (i == lorawanHandler.getActiveProfileIndex()) {
+            Serial.println("  >>> CURRENTLY ACTIVE <<<");
+        }
+        Serial.println();
+    }
+    
+    if (lorawanHandler.getAutoRotation() && enabled_count > 1) {
+        Serial.println("Auto-Rotation Schedule (5 min per profile, 1 min stagger):");
+        int profile_idx = 0;
+        for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+            LoRaProfile* prof = lorawanHandler.getProfile(i);
+            if (prof && prof->enabled) {
+                Serial.printf("  Profile %d: T+%dmin, T+%dmin, T+%dmin...\n", 
+                    i, profile_idx, profile_idx + 5, profile_idx + 10);
+                profile_idx++;
+            }
+        }
+    }
+    
+    Serial.println("========================================\n");
+    
+    // Send initial uplink from all enabled profiles (startup announcement)
+    Serial.println("\n========================================");
+    Serial.println("Startup Uplink Sequence");
+    Serial.println("========================================");
+    Serial.printf("Sending initial uplinks from %d enabled profile(s)...\n\n", enabled_count);
+    
+    // Track which profiles we've sent from
+    bool sent_profiles[MAX_LORA_PROFILES] = {false};
+    int uplinks_sent = 0;
+    
+    // Get initial profile index
+    uint8_t initial_profile = lorawanHandler.getActiveProfileIndex();
+    
+    // Iterate through all profiles and send from enabled ones
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        LoRaProfile* prof = lorawanHandler.getProfile(i);
+        if (!prof || !prof->enabled) {
+            continue; // Skip disabled profiles
+        }
+        
+        // Switch to this profile if not already active
+        if (lorawanHandler.getActiveProfileIndex() != i) {
+            Serial.printf("\n>>> Switching to Profile %d: %s\n", i, prof->name);
+            lorawanHandler.setActiveProfile(i);
+            lorawanHandler.begin(); // Re-initialize with new profile credentials
+        }
+        
+        // Join with this profile
+        Serial.printf(">>> Joining network with Profile %d...\n", i);
+        lorawan_joined = lorawanHandler.join();
+        
+        if (lorawan_joined) {
+            Serial.printf(">>> Join successful for Profile %d!\n", i);
+            delay(1000);  // Brief delay to ensure join is fully processed
+            
+            // Send uplink
+            Serial.printf(">>> Sending startup uplink from Profile %d: %s\n", i, prof->name);
+            update_input_registers();  // Update sensor data before uplink
+            lorawanHandler.sendUplink(input_regs);
+            sent_profiles[i] = true;
+            uplinks_sent++;
+            
+            Serial.printf(">>> Uplink sent from Profile %d (%d/%d)\n", i, uplinks_sent, enabled_count);
+            
+            // Delay before next profile (10 seconds to allow RX windows to complete)
+            if (uplinks_sent < enabled_count) {
+                Serial.println(">>> Waiting 10 seconds before next profile...");
+                delay(10000);
+            }
+        } else {
+            Serial.printf(">>> Join failed for Profile %d, skipping uplink\n", i);
+        }
+    }
+    
+    Serial.println("\n========================================");
+    Serial.printf("Startup sequence complete: %d/%d uplinks sent\n", uplinks_sent, enabled_count);
+    Serial.println("========================================\n");
+    
+    // Return to initial profile for normal operation
+    if (lorawanHandler.getActiveProfileIndex() != initial_profile) {
+        Serial.printf("\n>>> Returning to initial Profile %d for normal operation\n", initial_profile);
+        lorawanHandler.setActiveProfile(initial_profile);
+        lorawanHandler.begin();
+        lorawan_joined = lorawanHandler.join();
+    } else {
+        // Ensure lorawan_joined reflects the last join status
+        lorawan_joined = lorawanHandler.join();
     }
 
     // Now safe to initialize E-Ink display after join attempt completes - Phase 5 integration
@@ -398,6 +519,7 @@ void loop() {
     static unsigned long last_sf6_update = 0;
     static unsigned long last_lorawan_uplink = 0;
     static unsigned long last_tcp_sync = 0;
+    static unsigned long last_profile_uplinks[MAX_LORA_PROFILES] = {0}; // Track last uplink time per profile
 
     unsigned long now = millis();
 
@@ -437,11 +559,87 @@ void loop() {
         );
     }
 
-    // Send LoRaWAN uplink every 5 minutes (if joined) - Phase 4 integration
-    if (lorawan_joined && (now - last_lorawan_uplink >= 300000)) {
-        last_lorawan_uplink = now;
-        // Old: send_lorawan_uplink();
-        lorawanHandler.sendUplink(input_regs);
+    // Send LoRaWAN uplink with staggered timing for multiple profiles
+    // Single profile: Every 5 minutes
+    // Multiple profiles with auto-rotation: Each profile every 5 minutes, staggered 1 minute apart
+    if (lorawan_joined) {
+        if (lorawanHandler.getAutoRotation() && lorawanHandler.getEnabledProfileCount() > 1) {
+            // Multi-profile mode: Each profile sends every 5 minutes, staggered by 1 minute
+            uint8_t current_profile = lorawanHandler.getActiveProfileIndex();
+            unsigned long time_since_last = now - last_profile_uplinks[current_profile];
+            
+            // Check if current profile is due for transmission (5 minutes since its last uplink)
+            if (time_since_last >= 300000) {
+                Serial.print("Profile ");
+                Serial.print(current_profile);
+                Serial.println(" is due for uplink (5min elapsed)");
+                
+                // Send uplink from current profile
+                last_profile_uplinks[current_profile] = now;
+                last_lorawan_uplink = now;
+                lorawanHandler.sendUplink(input_regs);
+                
+                // After sending, rotate to next enabled profile and join
+                if (lorawanHandler.rotateToNextProfile()) {
+                    Serial.println("Auto-rotation: Switching to next profile");
+                    
+                    // Re-join network with new profile credentials
+                    lorawan_joined = false;
+                    lorawanHandler.begin();
+                    if (lorawanHandler.join()) {
+                        lorawan_joined = true;
+                        Serial.print("Joined with profile ");
+                        Serial.println(lorawanHandler.getActiveProfileIndex());
+                    } else {
+                        Serial.println("Failed to join after profile rotation");
+                    }
+                }
+            } else {
+                // Check if we should switch to a different profile that's ready to send
+                // This ensures 1-minute staggering between profiles
+                uint8_t next_profile = lorawanHandler.getNextEnabledProfile();
+                if (next_profile != current_profile) {
+                    unsigned long next_time_since_last = now - last_profile_uplinks[next_profile];
+                    
+                    // If next profile is due AND at least 1 minute has passed since any uplink
+                    if (next_time_since_last >= 300000 && (now - last_lorawan_uplink >= 60000)) {
+                        Serial.print("Switching to profile ");
+                        Serial.print(next_profile);
+                        Serial.println(" which is ready to send");
+                        
+                        // Rotate to next profile
+                        if (lorawanHandler.rotateToNextProfile()) {
+                            // Re-join network
+                            lorawan_joined = false;
+                            lorawanHandler.begin();
+                            if (lorawanHandler.join()) {
+                                lorawan_joined = true;
+                                Serial.print("Joined with profile ");
+                                Serial.println(lorawanHandler.getActiveProfileIndex());
+                                
+                                // Send immediately after joining
+                                last_profile_uplinks[next_profile] = now;
+                                last_lorawan_uplink = now;
+                                lorawanHandler.sendUplink(input_regs);
+                            } else {
+                                Serial.println("Failed to join with next profile");
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Single profile mode: Send every 5 minutes
+            if (now - last_lorawan_uplink >= 300000) {
+                last_lorawan_uplink = now;
+                uint8_t current_profile = lorawanHandler.getActiveProfileIndex();
+                last_profile_uplinks[current_profile] = now;
+                
+                Serial.print("Sending uplink from profile ");
+                Serial.println(current_profile);
+                lorawanHandler.sendUplink(input_regs);
+            }
+        }
     }
 
     // Handle WiFi AP timeout (only if not connected as client)
@@ -591,6 +789,7 @@ void setup_web_server() {
     ResourceNode * nodeStats = new ResourceNode("/stats", "GET", &handle_stats);
     ResourceNode * nodeRegisters = new ResourceNode("/registers", "GET", &handle_registers);
     ResourceNode * nodeLoRaWAN = new ResourceNode("/lorawan", "GET", &handle_lorawan);
+    ResourceNode * nodeLoRaWANProfiles = new ResourceNode("/lorawan/profiles", "GET", &handle_lorawan_profiles);
     ResourceNode * nodeWiFi = new ResourceNode("/wifi", "GET", &handle_wifi);
     ResourceNode * nodeWiFiScan = new ResourceNode("/wifi/scan", "GET", &handle_wifi_scan);
     ResourceNode * nodeWiFiStatus = new ResourceNode("/wifi/status", "GET", &handle_wifi_status);
@@ -599,6 +798,10 @@ void setup_web_server() {
     // Register POST handlers
     ResourceNode * nodeConfig = new ResourceNode("/config", "POST", &handle_config);
     ResourceNode * nodeLoRaWANConfig = new ResourceNode("/lorawan/config", "POST", &handle_lorawan_config);
+    ResourceNode * nodeLoRaWANProfileUpdate = new ResourceNode("/lorawan/profile/update", "POST", &handle_lorawan_profile_update);
+    ResourceNode * nodeLoRaWANProfileToggle = new ResourceNode("/lorawan/profile/toggle", "GET", &handle_lorawan_profile_toggle);
+    ResourceNode * nodeLoRaWANProfileActivate = new ResourceNode("/lorawan/profile/activate", "GET", &handle_lorawan_profile_activate);
+    ResourceNode * nodeLoRaWANAutoRotate = new ResourceNode("/lorawan/auto-rotate", "GET", &handle_lorawan_auto_rotate);
     ResourceNode * nodeWiFiConnect = new ResourceNode("/wifi/connect", "POST", &handle_wifi_connect);
     ResourceNode * nodeSecurityUpdate = new ResourceNode("/security/update", "POST", &handle_security_update);
     ResourceNode * nodeDebugUpdate = new ResourceNode("/security/debug", "POST", &handle_debug_update);
@@ -614,6 +817,11 @@ void setup_web_server() {
     server.registerNode(nodeConfig);
     server.registerNode(nodeLoRaWAN);
     server.registerNode(nodeLoRaWANConfig);
+    server.registerNode(nodeLoRaWANProfiles);
+    server.registerNode(nodeLoRaWANProfileUpdate);
+    server.registerNode(nodeLoRaWANProfileToggle);
+    server.registerNode(nodeLoRaWANProfileActivate);
+    server.registerNode(nodeLoRaWANAutoRotate);
     server.registerNode(nodeWiFi);
     server.registerNode(nodeWiFiScan);
     server.registerNode(nodeWiFiConnect);
@@ -720,6 +928,7 @@ void handle_root(HTTPRequest * req, HTTPResponse * res) {
     html += "<a href='/stats'>Statistics</a>";
     html += "<a href='/registers'>Registers</a>";
     html += "<a href='/lorawan'>LoRaWAN</a>";
+    html += "<a href='/lorawan/profiles'>Profiles</a>";
     html += "<a href='/wifi'>WiFi</a>";
     html += "<a href='/security'>Security</a>";
     html += "<a href='/reboot' class='reboot' onclick='return confirm(\"Are you sure you want to reboot the device?\");'>Reboot</a>";
@@ -817,6 +1026,7 @@ void handle_stats(HTTPRequest * req, HTTPResponse * res) {
     html += "<a href='/stats'>Statistics</a>";
     html += "<a href='/registers'>Registers</a>";
     html += "<a href='/lorawan'>LoRaWAN</a>";
+    html += "<a href='/lorawan/profiles'>Profiles</a>";
     html += "<a href='/wifi'>WiFi</a>";
     html += "<a href='/security'>Security</a>";
     html += "<a href='/reboot' class='reboot' onclick='return confirm(\"Are you sure you want to reboot the device?\");'>Reboot</a>";
@@ -960,6 +1170,7 @@ void handle_registers(HTTPRequest * req, HTTPResponse * res) {
     html += "<a href='/stats'>Statistics</a>";
     html += "<a href='/registers'>Registers</a>";
     html += "<a href='/lorawan'>LoRaWAN</a>";
+    html += "<a href='/lorawan/profiles'>Profiles</a>";
     html += "<a href='/wifi'>WiFi</a>";
     html += "<a href='/security'>Security</a>";
     html += "<a href='/reboot' class='reboot' onclick='return confirm(\"Are you sure you want to reboot the device?\");'>Reboot</a>";
@@ -1256,6 +1467,7 @@ void handle_lorawan(HTTPRequest * req, HTTPResponse * res) {
     html += "<a href='/stats'>Statistics</a>";
     html += "<a href='/registers'>Registers</a>";
     html += "<a href='/lorawan'>LoRaWAN</a>";
+    html += "<a href='/lorawan/profiles'>Profiles</a>";
     html += "<a href='/wifi'>WiFi</a>";
     html += "<a href='/security'>Security</a>";
     html += "<a href='/reboot' class='reboot' onclick='return confirm(\"Are you sure you want to reboot the device?\");'>Reboot</a>";
@@ -1281,8 +1493,21 @@ void handle_lorawan(HTTPRequest * req, HTTPResponse * res) {
     html += "<tr><td class='label'>Region</td><td class='value'>EU868</td></tr>";
     html += "</table>";
 
+    // Display active profile info
+    uint8_t active_idx = lorawanHandler.getActiveProfileIndex();
+    LoRaProfile* active_prof = lorawanHandler.getProfile(active_idx);
+    if (active_prof) {
+        html += "<h2>Active Profile</h2>";
+        html += "<table>";
+        html += "<tr><th>Parameter</th><th>Value</th></tr>";
+        html += "<tr><td class='label'>Profile</td><td class='value'>" + String(active_idx) + " - " + String(active_prof->name) + "</td></tr>";
+        html += "<tr><td class='label'>Status</td><td class='value' style='background:#d4edda;color:#155724;font-weight:bold;'>ACTIVE</td></tr>";
+        html += "</table>";
+        html += "<p><a href='/lorawan/profiles' style='background:#3498db;'>Manage All Profiles →</a></p>";
+    }
+
     // Display current credentials
-    html += "<h2>Current Credentials</h2>";
+    html += "<h2>Current Credentials (Active Profile)</h2>";
     html += "<table>";
     html += "<tr><th>Parameter</th><th>Value</th></tr>";
 
@@ -1462,6 +1687,340 @@ void handle_lorawan_config(HTTPRequest * req, HTTPResponse * res) {
     }
 }
 
+// Handle LoRaWAN Profiles page
+void handle_lorawan_profiles(HTTPRequest * req, HTTPResponse * res) {
+    if (!check_authentication(req, res)) return;
+
+    String html = "<!DOCTYPE html><html><head><title>LoRaWAN Profiles - Vision Master E290</title>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<style>";
+    html += "body{font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:20px;background:#f5f5f5;}";
+    html += ".container{max-width:1100px;margin:0 auto;background:white;padding:30px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}";
+    html += "h1{color:#2c3e50;margin-top:0;border-bottom:3px solid #3498db;padding-bottom:15px;}";
+    html += "h2{color:#34495e;margin-top:30px;}";
+    html += ".nav{background:#3498db;padding:15px;margin:-30px -30px 30px -30px;border-radius:10px 10px 0 0;display:flex;align-items:center;}";
+    html += ".nav a{color:white;text-decoration:none;padding:10px 20px;margin:0 5px;background:#2980b9;border-radius:5px;display:inline-block;}";
+    html += ".nav a:hover{background:#21618c;}";
+    html += ".nav .reboot{margin-left:auto;background:#e74c3c;}";
+    html += ".nav .reboot:hover{background:#c0392b;}";
+    html += "table{border-collapse:collapse;width:100%;margin:15px 0;box-shadow:0 2px 4px rgba(0,0,0,0.1);}";
+    html += "th{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:12px;text-align:left;font-weight:600;}";
+    html += "td{border:1px solid #e0e0e0;padding:10px;background:white;}";
+    html += "tr:nth-child(even) td{background:#f8f9fa;}";
+    html += ".active-badge{background:#27ae60;color:white;padding:3px 8px;border-radius:3px;font-size:11px;font-weight:bold;}";
+    html += ".enabled{color:#27ae60;font-weight:bold;}";
+    html += ".disabled{color:#95a5a6;}";
+    html += ".btn{display:inline-block;padding:6px 12px;border-radius:4px;text-decoration:none;margin:2px;font-size:13px;cursor:pointer;border:none;}";
+    html += ".btn-primary{background:#3498db;color:white;}";
+    html += ".btn-primary:hover{background:#2980b9;}";
+    html += ".btn-success{background:#27ae60;color:white;}";
+    html += ".btn-success:hover{background:#229954;}";
+    html += ".btn-warning{background:#f39c12;color:white;}";
+    html += ".btn-warning:hover{background:#e67e22;}";
+    html += ".btn-danger{background:#e74c3c;color:white;}";
+    html += ".btn-danger:hover{background:#c0392b;}";
+    html += ".profile-detail{background:#ecf0f1;padding:20px;border-radius:8px;margin:15px 0;}";
+    html += "form{margin:20px 0;}";
+    html += "label{display:block;margin:10px 0 5px;font-weight:600;}";
+    html += "input[type=text]{width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-family:monospace;box-sizing:border-box;}";
+    html += ".warning{background:#fff3cd;border:1px solid #ffc107;padding:12px;border-radius:5px;margin:10px 0;color:#856404;}";
+    html += "</style>";
+    html += "<script>";
+    html += "function toggleProfile(idx){";
+    html += "  fetch('/lorawan/profile/toggle?index='+idx).then(r=>r.text()).then(()=>location.reload());";
+    html += "}";
+    html += "function activateProfile(idx){";
+    html += "  if(confirm('Switch to this profile? Device will restart to join with new credentials.')){";
+    html += "    fetch('/lorawan/profile/activate?index='+idx).then(()=>{";
+    html += "      alert('Profile activated! Device will restart...');";
+    html += "      setTimeout(()=>location.href='/',10000);";
+    html += "    });";
+    html += "  }";
+    html += "}";
+    html += "function toggleAutoRotate(enabled){";
+    html += "  fetch('/lorawan/auto-rotate?enabled='+(enabled?'1':'0')).then(r=>r.text()).then(()=>location.reload());";
+    html += "}";
+    html += "</script>";
+    html += "</head><body>";
+    html += "<div class='container'>";
+    html += "<div class='nav'>";
+    html += "<a href='/'>Home</a>";
+    html += "<a href='/stats'>Statistics</a>";
+    html += "<a href='/registers'>Registers</a>";
+    html += "<a href='/lorawan'>LoRaWAN</a>";
+    html += "<a href='/lorawan/profiles'>Profiles</a>";
+    html += "<a href='/lorawan/profiles'>Profiles</a>";
+    html += "<a href='/wifi'>WiFi</a>";
+    html += "<a href='/security'>Security</a>";
+    html += "<a href='/reboot' class='reboot' onclick='return confirm(\"Reboot device?\");'>Reboot</a>";
+    html += "</div>";
+    html += "<h1>LoRaWAN Device Profiles</h1>";
+    html += "<p>Manage up to 4 LoRaWAN device profiles. Each profile can emulate a different device with unique credentials.</p>";
+    
+    html += "<div class='warning'>";
+    html += "<strong>Note:</strong> Only enabled profiles can be activated. Switching profiles requires a device restart.";
+    html += "</div>";
+
+    // Auto-rotation controls
+    bool auto_rotate = lorawanHandler.getAutoRotation();
+    int enabled_count = lorawanHandler.getEnabledProfileCount();
+    
+    html += "<div class='profile-detail' style='background:#d5f4e6;border:2px solid #27ae60;'>";
+    html += "<h2>🔄 Auto-Rotation</h2>";
+    html += "<p>Automatically cycle through enabled profiles during uplink transmissions. Each transmission will use the next enabled profile.</p>";
+    html += "<p><strong>Status:</strong> <span style='color:" + String(auto_rotate ? "#27ae60" : "#95a5a6") + ";font-weight:bold;'>";
+    html += auto_rotate ? "ENABLED" : "DISABLED";
+    html += "</span> | <strong>Enabled Profiles:</strong> " + String(enabled_count) + "</p>";
+    
+    if (enabled_count < 2) {
+        html += "<p style='color:#e67e22;font-weight:bold;'>⚠️ Enable at least 2 profiles to use auto-rotation.</p>";
+    }
+    
+    html += "<label style='display:inline-block;margin:10px 0;'>";
+    html += "<input type='checkbox' id='autoRotateCheckbox' ";
+    if (auto_rotate) html += "checked ";
+    if (enabled_count < 2) html += "disabled ";
+    html += "onchange='toggleAutoRotate(this.checked)'> ";
+    html += "Enable Auto-Rotation";
+    html += "</label>";
+    html += "</div>";
+
+    // Display all profiles
+    html += "<h2>Profile Overview</h2>";
+    html += "<table>";
+    html += "<tr><th>Profile</th><th>Name</th><th>DevEUI</th><th>Status</th><th>Actions</th></tr>";
+    
+    uint8_t active_idx = lorawanHandler.getActiveProfileIndex();
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        LoRaProfile* prof = lorawanHandler.getProfile(i);
+        if (!prof) continue;
+        
+        html += "<tr>";
+        html += "<td><strong>" + String(i) + "</strong>";
+        if (i == active_idx) {
+            html += " <span class='active-badge'>ACTIVE</span>";
+        }
+        html += "</td>";
+        html += "<td>" + String(prof->name) + "</td>";
+        
+        char devEUIStr[17];
+        sprintf(devEUIStr, "%016llX", prof->devEUI);
+        html += "<td style='font-family:monospace;font-size:12px;'>0x" + String(devEUIStr) + "</td>";
+        
+        html += "<td><span class='" + String(prof->enabled ? "enabled" : "disabled") + "'>";
+        html += prof->enabled ? "ENABLED" : "DISABLED";
+        html += "</span></td>";
+        
+        html += "<td>";
+        // Toggle enable/disable button
+        if (i != active_idx || !prof->enabled) {
+            html += "<button class='btn " + String(prof->enabled ? "btn-warning" : "btn-success") + "' onclick='toggleProfile(" + String(i) + ")'>";
+            html += prof->enabled ? "Disable" : "Enable";
+            html += "</button> ";
+        }
+        // Activate button (only for enabled, non-active profiles)
+        if (prof->enabled && i != active_idx) {
+            html += "<button class='btn btn-primary' onclick='activateProfile(" + String(i) + ")'>Activate</button> ";
+        }
+        html += "<a href='#profile" + String(i) + "' class='btn btn-primary'>Edit</a>";
+        html += "</td>";
+        html += "</tr>";
+    }
+    html += "</table>";
+
+    // Detail forms for each profile
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        LoRaProfile* prof = lorawanHandler.getProfile(i);
+        if (!prof) continue;
+        
+        html += "<div id='profile" + String(i) + "' class='profile-detail'>";
+        html += "<h2>Profile " + String(i) + ": " + String(prof->name) + "</h2>";
+        
+        if (i == active_idx) {
+            html += "<p style='color:#27ae60;font-weight:bold;'>⚫ This is the currently active profile</p>";
+        }
+        
+        html += "<form method='POST' action='/lorawan/profile/update'>";
+        html += "<input type='hidden' name='index' value='" + String(i) + "'>";
+        
+        html += "<label>Profile Name:</label>";
+        html += "<input type='text' name='name' value='" + String(prof->name) + "' maxlength='32' required>";
+        
+        html += "<label>JoinEUI (AppEUI) - 16 hex characters:</label>";
+        char joinEUIStr[17];
+        sprintf(joinEUIStr, "%016llX", prof->joinEUI);
+        html += "<input type='text' name='joinEUI' value='" + String(joinEUIStr) + "' pattern='[0-9A-Fa-f]{16}' required>";
+        
+        html += "<label>DevEUI - 16 hex characters:</label>";
+        char devEUIStr[17];
+        sprintf(devEUIStr, "%016llX", prof->devEUI);
+        html += "<input type='text' name='devEUI' value='" + String(devEUIStr) + "' pattern='[0-9A-Fa-f]{16}' required>";
+        
+        html += "<label>AppKey - 32 hex characters:</label>";
+        html += "<input type='text' name='appKey' value='";
+        for (int j = 0; j < 16; j++) {
+            char buf[3];
+            sprintf(buf, "%02X", prof->appKey[j]);
+            html += String(buf);
+        }
+        html += "' pattern='[0-9A-Fa-f]{32}' required>";
+        
+        html += "<label>NwkKey - 32 hex characters:</label>";
+        html += "<input type='text' name='nwkKey' value='";
+        for (int j = 0; j < 16; j++) {
+            char buf[3];
+            sprintf(buf, "%02X", prof->nwkKey[j]);
+            html += String(buf);
+        }
+        html += "' pattern='[0-9A-Fa-f]{32}' required>";
+        
+        html += "<button type='submit' class='btn btn-success' style='margin-top:15px;'>Save Profile " + String(i) + "</button>";
+        html += "</form>";
+        html += "</div>";
+    }
+    
+    html += "</div></body></html>";
+    res->setStatusCode(200);
+    res->setHeader("Content-Type", "text/html");
+    res->print(html.c_str());
+}
+
+// Handle profile update
+void handle_lorawan_profile_update(HTTPRequest * req, HTTPResponse * res) {
+    if (!check_authentication(req, res)) return;
+
+    String html = "<!DOCTYPE html><html><head><title>Updating Profile - Vision Master E290</title>";
+    html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
+    html += "<meta http-equiv='refresh' content='3;url=/lorawan/profiles'>";
+    html += "<style>";
+    html += "body{font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:20px;background:#f5f5f5;}";
+    html += ".container{max-width:600px;margin:50px auto;background:white;padding:40px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);text-align:center;}";
+    html += "h1{color:#27ae60;}";
+    html += "p{color:#7f8c8d;font-size:16px;margin:20px 0;}";
+    html += "</style></head><body><div class='container'>";
+
+    String postBody = readPostBody(req);
+    String indexStr, name, joinEUIStr, devEUIStr, appKeyStr, nwkKeyStr;
+    
+    if (getPostParameterFromBody(postBody, "index", indexStr) &&
+        getPostParameterFromBody(postBody, "name", name) &&
+        getPostParameterFromBody(postBody, "joinEUI", joinEUIStr) &&
+        getPostParameterFromBody(postBody, "devEUI", devEUIStr) &&
+        getPostParameterFromBody(postBody, "appKey", appKeyStr) &&
+        getPostParameterFromBody(postBody, "nwkKey", nwkKeyStr)) {
+        
+        int index = indexStr.toInt();
+        
+        if (index >= 0 && index < MAX_LORA_PROFILES &&
+            joinEUIStr.length() == 16 && devEUIStr.length() == 16 &&
+            appKeyStr.length() == 32 && nwkKeyStr.length() == 32) {
+            
+            LoRaProfile profile;
+            strncpy(profile.name, name.c_str(), sizeof(profile.name) - 1);
+            profile.name[sizeof(profile.name) - 1] = '\0';
+            
+            profile.joinEUI = strtoull(joinEUIStr.c_str(), NULL, 16);
+            profile.devEUI = strtoull(devEUIStr.c_str(), NULL, 16);
+            
+            for (int i = 0; i < 16; i++) {
+                char buf[3] = {appKeyStr[i*2], appKeyStr[i*2+1], 0};
+                profile.appKey[i] = strtol(buf, NULL, 16);
+                char buf2[3] = {nwkKeyStr[i*2], nwkKeyStr[i*2+1], 0};
+                profile.nwkKey[i] = strtol(buf2, NULL, 16);
+            }
+            
+            // Keep existing enabled status
+            LoRaProfile* existing = lorawanHandler.getProfile(index);
+            if (existing) {
+                profile.enabled = existing->enabled;
+            }
+            
+            lorawanHandler.updateProfile(index, profile);
+            
+            html += "<h1>Profile Updated!</h1>";
+            html += "<p>Profile " + String(index) + " has been saved.</p>";
+            html += "<p>Redirecting to profiles page...</p>";
+        } else {
+            html += "<h1>Invalid Input</h1>";
+            html += "<p>Please check your input values.</p>";
+        }
+    } else {
+        html += "<h1>Error</h1>";
+        html += "<p>Missing required parameters.</p>";
+    }
+    
+    html += "</div></body></html>";
+    res->setStatusCode(200);
+    res->setHeader("Content-Type", "text/html");
+    res->print(html.c_str());
+}
+
+// Handle profile toggle (enable/disable)
+void handle_lorawan_profile_toggle(HTTPRequest * req, HTTPResponse * res) {
+    if (!check_authentication(req, res)) return;
+
+    ResourceParameters * params = req->getParams();
+    std::string indexValue;
+    
+    if (params->getQueryParameter("index", indexValue)) {
+        int index = atoi(indexValue.c_str());
+        lorawanHandler.toggleProfileEnabled(index);
+    }
+    
+    res->setStatusCode(200);
+    res->setHeader("Content-Type", "text/plain");
+    res->print("OK");
+}
+
+// Handle profile activation (switch active profile)
+void handle_lorawan_profile_activate(HTTPRequest * req, HTTPResponse * res) {
+    if (!check_authentication(req, res)) return;
+
+    ResourceParameters * params = req->getParams();
+    std::string indexValue;
+    
+    if (params->getQueryParameter("index", indexValue)) {
+        int index = atoi(indexValue.c_str());
+        
+        if (lorawanHandler.setActiveProfile(index)) {
+            // Success - device will restart
+            res->setStatusCode(200);
+            res->setHeader("Content-Type", "text/plain");
+            res->print("Profile activated - restarting...");
+            
+            delay(1000);
+            ESP.restart();
+            return;
+        }
+    }
+    
+    res->setStatusCode(400);
+    res->setHeader("Content-Type", "text/plain");
+    res->print("Error: Cannot activate profile");
+}
+
+// Handle auto-rotation toggle
+void handle_lorawan_auto_rotate(HTTPRequest * req, HTTPResponse * res) {
+    if (!check_authentication(req, res)) return;
+
+    ResourceParameters * params = req->getParams();
+    std::string enabledValue;
+    
+    if (params->getQueryParameter("enabled", enabledValue)) {
+        bool enable = (enabledValue == "1");
+        lorawanHandler.setAutoRotation(enable);
+        
+        res->setStatusCode(200);
+        res->setHeader("Content-Type", "text/plain");
+        res->print(enable ? "Auto-rotation enabled" : "Auto-rotation disabled");
+        return;
+    }
+    
+    res->setStatusCode(400);
+    res->setHeader("Content-Type", "text/plain");
+    res->print("Error: Missing enabled parameter");
+}
+
 // Handle WiFi configuration page
 void handle_wifi(HTTPRequest * req, HTTPResponse * res) {
     if (!check_authentication(req, res)) return;
@@ -1540,6 +2099,7 @@ void handle_wifi(HTTPRequest * req, HTTPResponse * res) {
     html += "<a href='/stats'>Statistics</a>";
     html += "<a href='/registers'>Registers</a>";
     html += "<a href='/lorawan'>LoRaWAN</a>";
+    html += "<a href='/lorawan/profiles'>Profiles</a>";
     html += "<a href='/wifi'>WiFi</a>";
     html += "<a href='/security'>Security</a>";
     html += "<a href='/reboot' class='reboot' onclick='return confirm(\"Are you sure you want to reboot the device?\");'>Reboot</a>";
@@ -1941,6 +2501,7 @@ void handle_security(HTTPRequest * req, HTTPResponse * res) {
     html += "<a href='/stats'>Statistics</a>";
     html += "<a href='/registers'>Registers</a>";
     html += "<a href='/lorawan'>LoRaWAN</a>";
+    html += "<a href='/lorawan/profiles'>Profiles</a>";
     html += "<a href='/wifi'>WiFi</a>";
     html += "<a href='/security'>Security</a>";
     html += "<a href='/reboot' class='reboot' onclick='return confirm(\"Are you sure you want to reboot the device?\");'>Reboot</a>";

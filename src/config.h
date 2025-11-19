@@ -1,13 +1,15 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <stdint.h>
+
 // ============================================================================
 // FIRMWARE VERSION
 // ============================================================================
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 147  // v1.47 - Added factory reset feature in security tab
+#define FIRMWARE_VERSION 150  // v1.50 - Added per-profile nonce storage and startup uplink sequence
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
@@ -44,6 +46,17 @@
 #define LORA_BUSY   13   // BUSY
 
 #define LORAWAN_ENABLED true
+#define MAX_LORA_PROFILES 4
+
+// LoRaWAN Profile Structure
+struct LoRaProfile {
+    char name[33];           // Profile name (32 chars + null)
+    uint64_t devEUI;         // Device EUI (MSB)
+    uint64_t joinEUI;        // Join EUI / AppEUI (MSB)
+    uint8_t appKey[16];      // 128-bit AppKey (MSB)
+    uint8_t nwkKey[16];      // 128-bit NwkKey (MSB)
+    bool enabled;            // Profile enabled/disabled
+};
 
 // ============================================================================
 // WIFI CONFIGURATION
