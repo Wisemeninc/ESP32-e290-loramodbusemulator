@@ -5,6 +5,55 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.51] - 2025-11-19
+
+### Added
+- **Per-Profile Payload Format Selection**: Each profile can now use a different payload format
+  - Four payload formats available: Adeunis Modbus SF6, Cayenne LPP, Raw Modbus Registers, Custom
+  - Dropdown selector in web UI for easy format configuration
+  - Payload format displayed in profile overview table
+  - Format persisted in NVS with profile data
+  - Automatic migration for existing profiles (default to Adeunis)
+  - Serial output shows selected format and decoded values
+  - Perfect for simulating heterogeneous device fleets
+
+- **Payload Format Implementations**:
+  - **Adeunis Modbus SF6** (10 bytes): Original format with SF6-specific encoding
+  - **Cayenne LPP** (12 bytes): Standard IoT format compatible with most platforms
+  - **Raw Modbus Registers** (10 bytes): Direct register dump for debugging
+  - **Custom Format** (13 bytes): IEEE 754 floats for high-precision applications
+
+- **Web UI Enhancements**:
+  - "Payload Format" column in profile overview table
+  - Dropdown menu in profile edit forms
+  - Format description and usage hints
+  - Confirmation message showing selected format after save
+  - Responsive table design with horizontal scroll
+
+- **Documentation**:
+  - `PAYLOAD_FORMAT_SELECTION.md`: Technical reference with decoder examples
+  - `WEB_UI_PAYLOAD_SELECTION.md`: User guide for web interface usage
+  - JavaScript decoder examples for all formats
+  - ChirpStack integration guide for multi-format scenarios
+
+### Changed
+- Firmware version bumped to 151 (v1.51)
+- Profile update handler now processes `payload_type` parameter
+- Profile overview table now has 6 columns (added Payload Format)
+- `LoRaProfile` struct size increased by 1 byte (PayloadType field)
+
+### Fixed
+- Raw Modbus payload builder corrected to use available InputRegisters fields only
+- Payload size calculation now uses returned value instead of sizeof()
+
+### Technical
+- New enum: `PayloadType` with 4 values (0-3)
+- New array: `PAYLOAD_TYPE_NAMES[]` for format display names
+- Four payload builder functions in `lorawan_handler.cpp`
+- `sendUplink()` refactored with switch statement for format selection
+- NVS validation ensures payload_type is within valid range
+- Backwards compatible with v1.50 profile data
+
 ## [1.50] - 2025-11-19
 
 ### Added

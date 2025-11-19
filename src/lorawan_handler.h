@@ -67,6 +67,13 @@ public:
     void getNwkKey(uint8_t* buffer) const;
     uint32_t getDevAddr() const;
 
+    // Payload builders
+    size_t buildAdeunisModbusSF6Payload(uint8_t* payload, const InputRegisters& input);
+    size_t buildCayenneLPPPayload(uint8_t* payload, const InputRegisters& input);
+    size_t buildRawModbusPayload(uint8_t* payload, const InputRegisters& input);
+    size_t buildCustomPayload(uint8_t* payload, const InputRegisters& input);
+    size_t buildVistronLoraModConPayload(uint8_t* payload, const InputRegisters& input);
+
 private:
     Preferences preferences;
 

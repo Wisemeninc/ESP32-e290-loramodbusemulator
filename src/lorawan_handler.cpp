@@ -206,65 +206,52 @@ bool LoRaWANHandler::sendUplink(const InputRegisters& input) {
     // Battery level: 0 = external power, 1-254 = battery level, 255 = unable to measure
     node->setDeviceStatus(0);
 
-    // Prepare payload in AdeunisModbusSf6 format (10 bytes)
-    // Bytes 0-1: Header (uplink counter for tracking, decoder ignores these)
-    // Bytes 2-3: SF6 Density (kg/m³ × 100, big-endian)
-    // Bytes 4-5: SF6 Pressure @20C (bar × 1000, big-endian)
-    // Bytes 6-7: SF6 Temperature (Kelvin × 10, big-endian)
-    // Bytes 8-9: SF6 Pressure Variance (bar × 1000, big-endian)
-    uint8_t payload[10];
+    // Get current profile's payload type
+    LoRaProfile* current_profile = getProfile(active_profile_index);
+    PayloadType payload_type = current_profile ? current_profile->payload_type : PAYLOAD_ADEUNIS_MODBUS_SF6;
+    
+    Serial.printf("Using payload format: %s\n", PAYLOAD_TYPE_NAMES[payload_type]);
 
-    // Header (bytes 0-1) - Uplink counter for tracking
-    payload[0] = (uplink_count >> 8) & 0xFF;
-    payload[1] = uplink_count & 0xFF;
-
-    // SF6 Density (2 bytes, big-endian)
-    payload[2] = (input.sf6_density >> 8) & 0xFF;
-    payload[3] = input.sf6_density & 0xFF;
-
-    // SF6 Pressure @20C (2 bytes, big-endian)
-    payload[4] = (input.sf6_pressure_20c >> 8) & 0xFF;
-    payload[5] = input.sf6_pressure_20c & 0xFF;
-
-    // SF6 Temperature (2 bytes, big-endian)
-    payload[6] = (input.sf6_temperature >> 8) & 0xFF;
-    payload[7] = input.sf6_temperature & 0xFF;
-
-    // SF6 Pressure Variance (2 bytes, big-endian)
-    payload[8] = (input.sf6_pressure_var >> 8) & 0xFF;
-    payload[9] = input.sf6_pressure_var & 0xFF;
+    // Prepare payload based on profile's payload type
+    uint8_t payload[256];  // Max LoRaWAN payload size
+    size_t payload_size = 0;
+    
+    switch (payload_type) {
+        case PAYLOAD_ADEUNIS_MODBUS_SF6:
+            payload_size = buildAdeunisModbusSF6Payload(payload, input);
+            break;
+        case PAYLOAD_CAYENNE_LPP:
+            payload_size = buildCayenneLPPPayload(payload, input);
+            break;
+        case PAYLOAD_RAW_MODBUS:
+            payload_size = buildRawModbusPayload(payload, input);
+            break;
+        case PAYLOAD_CUSTOM:
+            payload_size = buildCustomPayload(payload, input);
+            break;
+        case PAYLOAD_VISTRON_LORA_MOD_CON:
+            payload_size = buildVistronLoraModConPayload(payload, input);
+            break;
+        default:
+            payload_size = buildAdeunisModbusSF6Payload(payload, input);
+            break;
+    }
 
     // Print payload in hex for debugging
     Serial.print("Payload (");
-    Serial.print(sizeof(payload));
+    Serial.print(payload_size);
     Serial.print(" bytes): ");
-    for (size_t i = 0; i < sizeof(payload); i++) {
+    for (size_t i = 0; i < payload_size; i++) {
         if (payload[i] < 0x10) Serial.print("0");
         Serial.print(payload[i], HEX);
     }
     Serial.println();
 
-    Serial.println("Payload breakdown (AdeunisModbusSf6 format):");
-    Serial.printf("  Header (uplink #%u) - bytes 0-1 skipped by decoder\n",
-        (payload[0] << 8) | payload[1]);
-    Serial.printf("  SF6 Density: %u (%.2f kg/m³)\n",
-        (payload[2] << 8) | payload[3],
-        ((payload[2] << 8) | payload[3]) / 100.0);
-    Serial.printf("  SF6 Pressure @20C: %u (%.3f bar)\n",
-        (payload[4] << 8) | payload[5],
-        ((payload[4] << 8) | payload[5]) / 1000.0);
-    Serial.printf("  SF6 Temperature: %u (%.1f °C)\n",
-        (payload[6] << 8) | payload[7],
-        (((payload[6] << 8) | payload[7]) / 10.0) - 273.15);
-    Serial.printf("  SF6 Pressure Var: %u (%.3f bar)\n",
-        (payload[8] << 8) | payload[9],
-        ((payload[8] << 8) | payload[9]) / 1000.0);
-
     // Send unconfirmed uplink on port 1
     uint8_t downlinkPayload[256];
     size_t downlinkSize = 0;
 
-    int state = node->sendReceive(payload, sizeof(payload), 1, downlinkPayload, &downlinkSize);
+    int state = node->sendReceive(payload, payload_size, 1, downlinkPayload, &downlinkSize);
 
     // RadioLib sendReceive() return values:
     // < 0: Error occurred
@@ -319,6 +306,220 @@ bool LoRaWANHandler::sendUplink(const InputRegisters& input) {
         Serial.println("========================================");
         return false;
     }
+}
+
+// ============================================================================
+// PAYLOAD BUILDERS
+// ============================================================================
+
+size_t LoRaWANHandler::buildAdeunisModbusSF6Payload(uint8_t* payload, const InputRegisters& input) {
+    // AdeunisModbusSf6 format (10 bytes)
+    // Bytes 0-1: Header (uplink counter for tracking, decoder ignores these)
+    // Bytes 2-3: SF6 Density (kg/m³ × 100, big-endian)
+    // Bytes 4-5: SF6 Pressure @20C (bar × 1000, big-endian)
+    // Bytes 6-7: SF6 Temperature (Kelvin × 10, big-endian)
+    // Bytes 8-9: SF6 Pressure Variance (bar × 1000, big-endian)
+    
+    // Header (bytes 0-1) - Uplink counter for tracking
+    payload[0] = (uplink_count >> 8) & 0xFF;
+    payload[1] = uplink_count & 0xFF;
+
+    // SF6 Density (2 bytes, big-endian)
+    payload[2] = (input.sf6_density >> 8) & 0xFF;
+    payload[3] = input.sf6_density & 0xFF;
+
+    // SF6 Pressure @20C (2 bytes, big-endian)
+    payload[4] = (input.sf6_pressure_20c >> 8) & 0xFF;
+    payload[5] = input.sf6_pressure_20c & 0xFF;
+
+    // SF6 Temperature (2 bytes, big-endian)
+    payload[6] = (input.sf6_temperature >> 8) & 0xFF;
+    payload[7] = input.sf6_temperature & 0xFF;
+
+    // SF6 Pressure Variance (2 bytes, big-endian)
+    payload[8] = (input.sf6_pressure_var >> 8) & 0xFF;
+    payload[9] = input.sf6_pressure_var & 0xFF;
+
+    Serial.println("Payload breakdown (Adeunis Modbus SF6):");
+    Serial.printf("  Header (uplink #%u) - bytes 0-1 skipped by decoder\n",
+        (payload[0] << 8) | payload[1]);
+    Serial.printf("  SF6 Density: %u (%.2f kg/m³)\n",
+        (payload[2] << 8) | payload[3],
+        ((payload[2] << 8) | payload[3]) / 100.0);
+    Serial.printf("  SF6 Pressure @20C: %u (%.3f bar)\n",
+        (payload[4] << 8) | payload[5],
+        ((payload[4] << 8) | payload[5]) / 1000.0);
+    Serial.printf("  SF6 Temperature: %u (%.1f °C)\n",
+        (payload[6] << 8) | payload[7],
+        (((payload[6] << 8) | payload[7]) / 10.0) - 273.15);
+    Serial.printf("  SF6 Pressure Var: %u (%.3f bar)\n",
+        (payload[8] << 8) | payload[9],
+        ((payload[8] << 8) | payload[9]) / 1000.0);
+
+    return 10;
+}
+
+size_t LoRaWANHandler::buildCayenneLPPPayload(uint8_t* payload, const InputRegisters& input) {
+    // Cayenne LPP format (variable length)
+    // Each data point: Channel (1) + Type (1) + Data (n bytes)
+    size_t index = 0;
+
+    // Channel 1: Temperature (Type 0x67, 2 bytes, 0.1°C signed)
+    float temp_celsius = (input.sf6_temperature / 10.0) - 273.15;
+    int16_t temp_encoded = (int16_t)(temp_celsius * 10);
+    payload[index++] = 1;  // Channel
+    payload[index++] = 0x67;  // Temperature type
+    payload[index++] = (temp_encoded >> 8) & 0xFF;
+    payload[index++] = temp_encoded & 0xFF;
+
+    // Channel 2: Analog Input for Pressure (Type 0x02, 2 bytes, 0.01 signed)
+    float pressure_bar = input.sf6_pressure_20c / 1000.0;
+    int16_t pressure_encoded = (int16_t)(pressure_bar * 100);
+    payload[index++] = 2;  // Channel
+    payload[index++] = 0x02;  // Analog Input type
+    payload[index++] = (pressure_encoded >> 8) & 0xFF;
+    payload[index++] = pressure_encoded & 0xFF;
+
+    // Channel 3: Analog Input for Density (Type 0x02, 2 bytes, 0.01 signed)
+    float density_kgm3 = input.sf6_density / 100.0;
+    int16_t density_encoded = (int16_t)(density_kgm3 * 100);
+    payload[index++] = 3;  // Channel
+    payload[index++] = 0x02;  // Analog Input type
+    payload[index++] = (density_encoded >> 8) & 0xFF;
+    payload[index++] = density_encoded & 0xFF;
+
+    Serial.println("Payload breakdown (Cayenne LPP):");
+    Serial.printf("  Ch1 Temperature: %.1f °C\n", temp_celsius);
+    Serial.printf("  Ch2 Pressure: %.3f bar\n", pressure_bar);
+    Serial.printf("  Ch3 Density: %.2f kg/m³\n", density_kgm3);
+
+    return index;
+}
+
+size_t LoRaWANHandler::buildRawModbusPayload(uint8_t* payload, const InputRegisters& input) {
+    // Raw Modbus registers format (10 bytes)
+    // Send the raw uint16_t values as-is (big-endian)
+    size_t index = 0;
+
+    // Uplink counter (2 bytes)
+    payload[index++] = (uplink_count >> 8) & 0xFF;
+    payload[index++] = uplink_count & 0xFF;
+
+    // SF6 Density (2 bytes)
+    payload[index++] = (input.sf6_density >> 8) & 0xFF;
+    payload[index++] = input.sf6_density & 0xFF;
+
+    // SF6 Pressure @20C (2 bytes)
+    payload[index++] = (input.sf6_pressure_20c >> 8) & 0xFF;
+    payload[index++] = input.sf6_pressure_20c & 0xFF;
+
+    // SF6 Temperature (2 bytes)
+    payload[index++] = (input.sf6_temperature >> 8) & 0xFF;
+    payload[index++] = input.sf6_temperature & 0xFF;
+
+    // SF6 Pressure Variance (2 bytes)
+    payload[index++] = (input.sf6_pressure_var >> 8) & 0xFF;
+    payload[index++] = input.sf6_pressure_var & 0xFF;
+
+    Serial.println("Payload breakdown (Raw Modbus Registers):");
+    Serial.printf("  Uplink Count: %u\n", uplink_count);
+    Serial.printf("  SF6 Density (raw): %u\n", input.sf6_density);
+    Serial.printf("  SF6 Pressure @20C (raw): %u\n", input.sf6_pressure_20c);
+    Serial.printf("  SF6 Temperature (raw): %u\n", input.sf6_temperature);
+    Serial.printf("  SF6 Pressure Var (raw): %u\n", input.sf6_pressure_var);
+
+    return index;
+}
+
+size_t LoRaWANHandler::buildCustomPayload(uint8_t* payload, const InputRegisters& input) {
+    // Custom format - simple example (can be customized)
+    // 1 byte: payload type identifier
+    // 4 bytes: temperature (float, LSB)
+    // 4 bytes: pressure (float, LSB)
+    // 4 bytes: density (float, LSB)
+    size_t index = 0;
+
+    payload[index++] = 0xFF;  // Custom format identifier
+
+    // Convert temperature to Celsius as float
+    float temp_celsius = (input.sf6_temperature / 10.0) - 273.15;
+    memcpy(&payload[index], &temp_celsius, 4);
+    index += 4;
+
+    // Convert pressure to bar as float
+    float pressure_bar = input.sf6_pressure_20c / 1000.0;
+    memcpy(&payload[index], &pressure_bar, 4);
+    index += 4;
+
+    // Convert density to kg/m³ as float
+    float density_kgm3 = input.sf6_density / 100.0;
+    memcpy(&payload[index], &density_kgm3, 4);
+    index += 4;
+
+    Serial.println("Payload breakdown (Custom Format):");
+    Serial.printf("  Temperature: %.2f °C\n", temp_celsius);
+    Serial.printf("  Pressure: %.3f bar\n", pressure_bar);
+    Serial.printf("  Density: %.2f kg/m³\n", density_kgm3);
+
+    return index;
+}
+
+size_t LoRaWANHandler::buildVistronLoraModConPayload(uint8_t* payload, const InputRegisters& input) {
+    // Vistron LoRa Mod Con format (16 bytes total)
+    // Frame Type 3: Periodic Modbus data uplink
+    // Bytes 0-7: Vistron frame header
+    // Bytes 8-15: Modbus sensor data (same as Trafag H72517o format)
+    size_t index = 0;
+
+    // Header for Frame Type 3 (Periodic Modbus uplink)
+    payload[index++] = 0x03;  // Frame type: 3 = Periodic Modbus data
+    payload[index++] = 0x00;  // Reserved/status byte
+    payload[index++] = 0x00;  // Error code: 0 = No error
+    
+    // Additional header bytes (can be uplink counter, device status, etc.)
+    payload[index++] = (uplink_count >> 8) & 0xFF;  // Uplink counter high byte
+    payload[index++] = uplink_count & 0xFF;         // Uplink counter low byte
+    payload[index++] = 0x00;  // Reserved
+    payload[index++] = 0x00;  // Reserved
+    payload[index++] = 0x08;  // Modbus data length (8 bytes)
+
+    // Modbus sensor data (8 bytes) - Trafag H72517o SF6 format
+    // Bytes 8-9: Density (kg/m³ × 100, big-endian)
+    payload[index++] = (input.sf6_density >> 8) & 0xFF;
+    payload[index++] = input.sf6_density & 0xFF;
+
+    // Bytes 10-11: Absolute Pressure at 20°C (bar × 1000, big-endian)
+    payload[index++] = (input.sf6_pressure_20c >> 8) & 0xFF;
+    payload[index++] = input.sf6_pressure_20c & 0xFF;
+
+    // Bytes 12-13: Temperature (Kelvin × 10, big-endian)
+    payload[index++] = (input.sf6_temperature >> 8) & 0xFF;
+    payload[index++] = input.sf6_temperature & 0xFF;
+
+    // Bytes 14-15: Absolute Pressure current (bar × 1000, big-endian)
+    // Using pressure_var as current pressure since we don't have a separate field
+    payload[index++] = (input.sf6_pressure_var >> 8) & 0xFF;
+    payload[index++] = input.sf6_pressure_var & 0xFF;
+
+    Serial.println("Payload breakdown (Vistron Lora Mod Con):");
+    Serial.printf("  Frame Type: 3 (Periodic Modbus uplink)\n");
+    Serial.printf("  Error Code: 0 (No errors)\n");
+    Serial.printf("  Uplink Count: %u\n", uplink_count);
+    Serial.println("  Modbus Data (Trafag H72517o format):");
+    Serial.printf("    Density: %u (%.2f kg/m³)\n",
+        (payload[8] << 8) | payload[9],
+        ((payload[8] << 8) | payload[9]) / 100.0);
+    Serial.printf("    Pressure @20°C: %u (%.3f bar)\n",
+        (payload[10] << 8) | payload[11],
+        ((payload[10] << 8) | payload[11]) / 1000.0);
+    Serial.printf("    Temperature: %u (%.1f °C)\n",
+        (payload[12] << 8) | payload[13],
+        (((payload[12] << 8) | payload[13]) / 10.0) - 273.15);
+    Serial.printf("    Absolute Pressure: %u (%.3f bar)\n",
+        (payload[14] << 8) | payload[15],
+        ((payload[14] << 8) | payload[15]) / 1000.0);
+
+    return index;
 }
 
 // ============================================================================
@@ -510,8 +711,20 @@ void LoRaWANHandler::loadProfiles() {
         
         size_t len = preferences.getBytes(key, &profiles[i], sizeof(LoRaProfile));
         if (len == sizeof(LoRaProfile)) {
-            Serial.printf("    Loaded Profile %d: %s (%s)\n", 
-                i, profiles[i].name, profiles[i].enabled ? "enabled" : "disabled");
+            // Validate payload_type (ensure it's within valid range)
+            if (profiles[i].payload_type > PAYLOAD_VISTRON_LORA_MOD_CON) {
+                Serial.printf("    Warning: Invalid payload_type for Profile %d, resetting to default\n", i);
+                profiles[i].payload_type = PAYLOAD_ADEUNIS_MODBUS_SF6;
+            }
+            Serial.printf("    Loaded Profile %d: %s (%s, %s)\n", 
+                i, profiles[i].name, 
+                profiles[i].enabled ? "enabled" : "disabled",
+                PAYLOAD_TYPE_NAMES[profiles[i].payload_type]);
+        } else if (len > 0 && len < sizeof(LoRaProfile)) {
+            // Partial load - likely from older firmware version without payload_type field
+            Serial.printf("    Warning: Profile %d size mismatch (got %d bytes, expected %d) - setting default payload type\n", 
+                i, len, sizeof(LoRaProfile));
+            profiles[i].payload_type = PAYLOAD_ADEUNIS_MODBUS_SF6;
         } else {
             Serial.printf("    Warning: Profile %d load failed (got %d bytes)\n", i, len);
         }
@@ -605,9 +818,13 @@ void LoRaWANHandler::generateProfile(uint8_t index, const char* name) {
     // Generate random NwkKey (16 bytes) - for LoRaWAN 1.0.x, copy AppKey
     memcpy(prof->nwkKey, prof->appKey, 16);
     
+    // Set default payload type
+    prof->payload_type = PAYLOAD_ADEUNIS_MODBUS_SF6;
+    
     Serial.printf("    Generated Profile %d: %s\n", index, prof->name);
     Serial.printf("      DevEUI: 0x%016llX\n", prof->devEUI);
     Serial.printf("      JoinEUI: 0x%016llX\n", prof->joinEUI);
+    Serial.printf("      Payload Type: %s\n", PAYLOAD_TYPE_NAMES[prof->payload_type]);
 }
 
 bool LoRaWANHandler::setActiveProfile(uint8_t index) {

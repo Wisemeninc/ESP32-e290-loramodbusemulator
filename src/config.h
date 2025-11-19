@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 150  // v1.50 - Added per-profile nonce storage and startup uplink sequence
+#define FIRMWARE_VERSION 151  // v1.51 - Added per-profile payload format selection with web UI
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
@@ -48,6 +48,24 @@
 #define LORAWAN_ENABLED true
 #define MAX_LORA_PROFILES 4
 
+// LoRaWAN Payload Types
+enum PayloadType {
+    PAYLOAD_ADEUNIS_MODBUS_SF6 = 0,  // Current format: SF6 sensor data (10 bytes)
+    PAYLOAD_CAYENNE_LPP = 1,          // Cayenne LPP format (variable length)
+    PAYLOAD_RAW_MODBUS = 2,           // Raw Modbus registers (10 bytes)
+    PAYLOAD_CUSTOM = 3,               // Custom user-defined format (13 bytes)
+    PAYLOAD_VISTRON_LORA_MOD_CON = 4  // Vistron LoRa Mod Con format (16 bytes)
+};
+
+// Payload type names for display
+const char* const PAYLOAD_TYPE_NAMES[] = {
+    "Adeunis Modbus SF6",
+    "Cayenne LPP",
+    "Raw Modbus Registers",
+    "Custom",
+    "Vistron Lora Mod Con"
+};
+
 // LoRaWAN Profile Structure
 struct LoRaProfile {
     char name[33];           // Profile name (32 chars + null)
@@ -56,6 +74,7 @@ struct LoRaProfile {
     uint8_t appKey[16];      // 128-bit AppKey (MSB)
     uint8_t nwkKey[16];      // 128-bit NwkKey (MSB)
     bool enabled;            // Profile enabled/disabled
+    PayloadType payload_type; // Payload format for this profile
 };
 
 // ============================================================================

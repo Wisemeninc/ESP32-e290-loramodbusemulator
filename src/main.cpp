@@ -1788,7 +1788,7 @@ void handle_lorawan_profiles(HTTPRequest * req, HTTPResponse * res) {
     // Display all profiles
     html += "<h2>Profile Overview</h2>";
     html += "<table>";
-    html += "<tr><th>Profile</th><th>Name</th><th>DevEUI</th><th>Status</th><th>Actions</th></tr>";
+    html += "<tr><th>Profile</th><th>Name</th><th>DevEUI</th><th>Payload Format</th><th>Status</th><th>Actions</th></tr>";
     
     uint8_t active_idx = lorawanHandler.getActiveProfileIndex();
     for (int i = 0; i < MAX_LORA_PROFILES; i++) {
@@ -1806,6 +1806,9 @@ void handle_lorawan_profiles(HTTPRequest * req, HTTPResponse * res) {
         char devEUIStr[17];
         sprintf(devEUIStr, "%016llX", prof->devEUI);
         html += "<td style='font-family:monospace;font-size:12px;'>0x" + String(devEUIStr) + "</td>";
+        
+        // Payload format
+        html += "<td style='font-size:12px;'>" + String(PAYLOAD_TYPE_NAMES[prof->payload_type]) + "</td>";
         
         html += "<td><span class='" + String(prof->enabled ? "enabled" : "disabled") + "'>";
         html += prof->enabled ? "ENABLED" : "DISABLED";
@@ -1845,6 +1848,16 @@ void handle_lorawan_profiles(HTTPRequest * req, HTTPResponse * res) {
         
         html += "<label>Profile Name:</label>";
         html += "<input type='text' name='name' value='" + String(prof->name) + "' maxlength='32' required>";
+        
+        html += "<label>Payload Format:</label>";
+        html += "<select name='payload_type' style='width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;box-sizing:border-box;'>";
+        for (int pt = 0; pt <= PAYLOAD_VISTRON_LORA_MOD_CON; pt++) {
+            html += "<option value='" + String(pt) + "'";
+            if (pt == prof->payload_type) html += " selected";
+            html += ">" + String(PAYLOAD_TYPE_NAMES[pt]) + "</option>";
+        }
+        html += "</select>";
+        html += "<p style='font-size:12px;color:#7f8c8d;margin:5px 0 15px 0;'>Different payload formats encode sensor data differently. Change this to match your decoder configuration.</p>";
         
         html += "<label>JoinEUI (AppEUI) - 16 hex characters:</label>";
         char joinEUIStr[17];
@@ -1900,7 +1913,7 @@ void handle_lorawan_profile_update(HTTPRequest * req, HTTPResponse * res) {
     html += "</style></head><body><div class='container'>";
 
     String postBody = readPostBody(req);
-    String indexStr, name, joinEUIStr, devEUIStr, appKeyStr, nwkKeyStr;
+    String indexStr, name, joinEUIStr, devEUIStr, appKeyStr, nwkKeyStr, payloadTypeStr;
     
     if (getPostParameterFromBody(postBody, "index", indexStr) &&
         getPostParameterFromBody(postBody, "name", name) &&
@@ -1929,6 +1942,18 @@ void handle_lorawan_profile_update(HTTPRequest * req, HTTPResponse * res) {
                 profile.nwkKey[i] = strtol(buf2, NULL, 16);
             }
             
+            // Get payload type from form (default to Adeunis if not provided)
+            if (getPostParameterFromBody(postBody, "payload_type", payloadTypeStr)) {
+                int pt = payloadTypeStr.toInt();
+                if (pt >= PAYLOAD_ADEUNIS_MODBUS_SF6 && pt <= PAYLOAD_VISTRON_LORA_MOD_CON) {
+                    profile.payload_type = (PayloadType)pt;
+                } else {
+                    profile.payload_type = PAYLOAD_ADEUNIS_MODBUS_SF6;
+                }
+            } else {
+                profile.payload_type = PAYLOAD_ADEUNIS_MODBUS_SF6;
+            }
+            
             // Keep existing enabled status
             LoRaProfile* existing = lorawanHandler.getProfile(index);
             if (existing) {
@@ -1939,6 +1964,7 @@ void handle_lorawan_profile_update(HTTPRequest * req, HTTPResponse * res) {
             
             html += "<h1>Profile Updated!</h1>";
             html += "<p>Profile " + String(index) + " has been saved.</p>";
+            html += "<p>Payload format: <strong>" + String(PAYLOAD_TYPE_NAMES[profile.payload_type]) + "</strong></p>";
             html += "<p>Redirecting to profiles page...</p>";
         } else {
             html += "<h1>Invalid Input</h1>";
