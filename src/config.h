@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 155  // v1.55 - Display improvements (partial refresh + normal colors)
+#define FIRMWARE_VERSION 156  // v1.56 - Populated Modbus input registers 4-8
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION

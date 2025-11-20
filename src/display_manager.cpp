@@ -110,7 +110,7 @@ void DisplayManager::showStartupScreen() {
     drawText(80, 85, "Initializing...", 1);
     
     // Bottom text
-    drawText(50, 110, "LoRaWAN + Modbus / TCP", 1);
+    drawText(50, 110, "LoRaWAN + Modbus RTU - TCP", 1);
 
     display.update();
 }

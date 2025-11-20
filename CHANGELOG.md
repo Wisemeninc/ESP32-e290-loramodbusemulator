@@ -5,6 +5,16 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.56] - 2025-11-20
+
+### Added
+- **Modbus Input Registers**: Populated registers 4-8 with device information
+  - Register 4: Modbus Slave ID
+  - Register 5: Serial Number (High) - First 2 bytes of MAC address
+  - Register 6: Serial Number (Low) - Last 2 bytes of MAC address
+  - Register 7: Firmware Version (156 for v1.56)
+  - Register 8: Crystal Frequency (4000 = 40.00 MHz)
+
 ## [1.55] - 2025-11-20
 
 ### Changed

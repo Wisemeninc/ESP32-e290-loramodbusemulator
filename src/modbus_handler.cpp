@@ -50,6 +50,18 @@ void ModbusHandler::begin(uint8_t slave_id) {
         mb.addIreg(i, 0);
     }
 
+    // Initialize input registers 4-8 with device information
+    input_regs.slave_id = slave_id;
+    
+    // Get ESP32 MAC address for serial number
+    uint8_t mac[6];
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    input_regs.serial_hi = (mac[0] << 8) | mac[1];  // First 2 bytes
+    input_regs.serial_lo = (mac[4] << 8) | mac[5];  // Last 2 bytes
+    
+    input_regs.sw_release = FIRMWARE_VERSION;  // From config.h
+    input_regs.quartz_freq = 4000;  // 40.00 MHz (ESP32-S3 crystal frequency)
+
     // Set up callbacks
     mb.onGetHreg(0, cbRead, 12);   // Holding regs 0-11
     mb.onSetHreg(0, cbWrite, 12);  // Allow writes to holding regs
@@ -115,6 +127,7 @@ void ModbusHandler::updateInputRegisters(float sf6_density, float sf6_pressure, 
 
 void ModbusHandler::setSlaveId(uint8_t slave_id) {
     this->slave_id = slave_id;
+    input_regs.slave_id = slave_id;  // Update input register
     mb.slave(slave_id);
     Serial.printf("Modbus Slave ID changed to: %d\n", slave_id);
 }
