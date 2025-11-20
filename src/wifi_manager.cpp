@@ -68,8 +68,8 @@ bool WiFiManager::startAP() {
     char mac_suffix[5];
     sprintf(mac_suffix, "%02X%02X", mac[4], mac[5]);
 
-    // Create unique SSID: ESP32-Modbus-Config-XXXX
-    ap_ssid = "ESP32-Modbus-Config-" + String(mac_suffix);
+    // Create unique SSID: stationsdata-XXXX
+    ap_ssid = "stationsdata-" + String(mac_suffix);
 
     WiFi.mode(WIFI_AP);
     WiFi.softAP(ap_ssid.c_str(), ap_password, 1, 0, 4);
@@ -178,7 +178,7 @@ int WiFiManager::getClientRSSI() {
 // ============================================================================
 
 void WiFiManager::loadClientCredentials() {
-    if (!preferences.begin("wifi", true)) {  // Read-only
+    if (!preferences.begin("wifi", false)) {  // Read-write (creates if not exists)
         Serial.println(">>> Failed to open wifi preferences");
         return;
     }

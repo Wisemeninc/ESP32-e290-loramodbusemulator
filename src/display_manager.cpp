@@ -210,20 +210,21 @@ void DisplayManager::update(
         drawText(35, 82, ssid.c_str(), 1);
         drawText(110, 82, WiFi.localIP().toString().c_str(), 1);
     } else if (holding.wifi_enabled) {
-        // AP mode - show client count and SSID
-        drawText(35, 82, "AP", 1);
-        drawNumber(55, 82, holding.wifi_clients, 0, 1);
-        drawText(75, 82, "clients", 1);
-        // Show AP SSID (truncated to fit)
+        // AP mode - show full SSID
         if (ap_ssid && strlen(ap_ssid) > 0) {
             String ssid_str = String(ap_ssid);
-            // Extract last part after hyphen for compact display (e.g., "A1B2" from "ESP32-Modbus-Config-A1B2")
-            int lastHyphen = ssid_str.lastIndexOf('-');
-            if (lastHyphen > 0) {
-                ssid_str = ssid_str.substring(lastHyphen + 1);
+            // Truncate if too long to fit display
+            if (ssid_str.length() > 20) {
+                ssid_str = ssid_str.substring(0, 20);
             }
-            drawText(115, 82, ssid_str.c_str(), 1);
+            drawText(35, 82, ssid_str.c_str(), 1);
+        } else {
+            drawText(35, 82, "AP", 1);
         }
+        // Show client count at the end
+        drawText(180, 82, "(", 1);
+        drawNumber(188, 82, holding.wifi_clients, 0, 1);
+        drawText(196, 82, ")", 1);
     } else {
         drawText(35, 82, "OFF", 1);
     }

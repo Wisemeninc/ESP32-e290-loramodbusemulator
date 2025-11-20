@@ -733,15 +733,9 @@ void LoRaWANHandler::generateCredentials() {
 void LoRaWANHandler::loadCredentials() {
     Serial.println(">>> Opening LoRaWAN preferences namespace...");
 
-    // Try to open in read-only mode first
-    if (!preferences.begin("lorawan", true)) {
-        // Namespace doesn't exist - this is first boot
-        Serial.println(">>> Namespace doesn't exist (first boot)");
-        Serial.println(">>> Generating new credentials...");
-
-        // Generate and save new credentials
-        generateCredentials();
-        saveCredentials();
+    // Open in read-write mode (creates if not exists)
+    if (!preferences.begin("lorawan", false)) {
+        Serial.println(">>> Failed to open lorawan preferences");
         return;
     }
 
@@ -853,7 +847,7 @@ void LoRaWANHandler::printCredentials() {
 void LoRaWANHandler::loadProfiles() {
     Serial.println(">>> Loading LoRaWAN profiles from NVS...");
     
-    if (!preferences.begin("lorawan_prof", true)) {
+    if (!preferences.begin("lorawan_prof", false)) {  // Read-write (creates if not exists)
         Serial.println(">>> Failed to open lorawan_prof namespace");
         initializeDefaultProfiles();
         return;
@@ -1215,7 +1209,7 @@ void LoRaWANHandler::saveSession() {
 void LoRaWANHandler::loadSession() {
     Serial.println(">>> load_lorawan_session() called");
 
-    if (!preferences.begin("lorawan", true)) {
+    if (!preferences.begin("lorawan", false)) {  // Read-write (creates if not exists)
         Serial.println(">>> ERROR: Cannot open preferences to load session");
         return;
     }
@@ -1270,7 +1264,7 @@ void LoRaWANHandler::loadSession() {
 }
 
 bool LoRaWANHandler::restoreNonces() {
-    if (!preferences.begin("lorawan", true)) {
+    if (!preferences.begin("lorawan", false)) {  // Read-write (creates if not exists)
         return false;
     }
 
@@ -1292,7 +1286,7 @@ bool LoRaWANHandler::restoreNonces() {
     node->beginOTAA(joinEUI, devEUI, nwkKey, appKey);
 
     // Load profile-specific nonces from NVS
-    if (preferences.begin("lorawan", true)) {
+    if (preferences.begin("lorawan", false)) {  // Read-write (creates if not exists)
         const size_t noncesSize = RADIOLIB_LORAWAN_NONCES_BUF_SIZE;
         uint8_t noncesBuffer[RADIOLIB_LORAWAN_NONCES_BUF_SIZE];
         

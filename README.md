@@ -4,7 +4,7 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 
 **Framework:** Arduino (via PlatformIO)
 **Platform:** Espressif32 (ESP32-S3)
-**Current Version:** v1.43
+**Current Version:** v1.58
 
 **Key Highlights:**
 - 🔧 **12 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
@@ -54,8 +54,8 @@ https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Meshtasti
   - **Manual control** via web interface with persistent storage (NVS)
 - **HW-519 RS485 module** with automatic flow control
 - **WiFi Access Point** for configuration (active for 20 minutes after boot)
-  - SSID: `ESP32-Modbus-Config`
-  - Password: `modbus123`
+  - SSID: `stationsdata-XXXX` (XXXX = last 4 hex digits of MAC address)
+  - Password: `modbus123` (development mode)
   - Configure Modbus slave ID via web interface (no restart required)
   - View real-time statistics (requests, uptime, etc.)
   - View and monitor all holding and input registers in real-time
@@ -63,30 +63,40 @@ https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Meshtasti
 
 ### LoRaWAN Features
 - **LoRaWAN OTAA** (Over-The-Air Activation) - fully implemented
+- **Multi-profile support** - Up to 4 LoRaWAN profiles with auto-rotation
+- **Automatic profile switching** - Rotates through enabled profiles for load balancing
+- **Per-profile nonce management** - Independent DevNonce tracking for each profile
 - **Periodic transmission** of Modbus register data
-- **RadioLib integration** with SX1262 transceiver
-- **Region support:** EU868 (configurable in src/main.cpp)
-- **Efficient payload encoding** (18 bytes for key registers)
+- **RadioLib integration** with SX1262 transceiver (v7.4.0+)
+- **Region support:** EU868 (configurable)
+- **Two payload formats:**
+  - Adeunis Modbus SF6 (10 bytes)
+  - Vistron Lora Mod Con (16 bytes)
 - **Session persistence** with NVS storage
-- **Uplink and downlink** handling
-- **Join status monitoring** on E-Ink display
+- **Uplink and downlink** handling with MAC command support
+- **Join status monitoring** on E-Ink display with multi-EUI display
 
-**Note:** LoRaWAN is fully implemented using [RadioLib](https://github.com/jgromes/RadioLib). Credentials are auto-generated on first boot and can be viewed/modified via the web interface. Default region is EU868.
+**Note:** LoRaWAN is fully implemented using [RadioLib](https://github.com/jgromes/RadioLib). Credentials for up to 4 profiles are auto-generated on first boot and can be viewed/modified via the web interface. Default region is EU868.
 
 ### E-Ink Display Features
 - **2.9" E-Paper display** (296×128 pixels, black and white)
-- **Fully functional graphics** using Heltec E-Ink library
+- **Partial refresh mode** - Fast updates without flicker (9 out of 10 updates)
+- **Automatic full refresh** - Every 10 updates to prevent ghosting
+- **Fully functional graphics** using Heltec E-Ink library (v4.6.0)
 - **Real-time monitoring** of Modbus registers and LoRaWAN status
 - **Automatic updates** every 30 seconds
-- **Configurable rotation** (portrait/landscape via DISPLAY_ROTATION define)
+- **Configurable rotation** (portrait/landscape via DISPLAY_ROTATION define in config.h)
 - **Low power** - E-Ink retains image without power
 - **Display shows:**
   - LoRaWAN status (JOINED/JOINING/DISABLED)
-  - LoRaWAN uplink counter
+  - Multiple DevEUIs (compact format for enabled profiles)
+  - LoRaWAN uplink counter and RSSI/SNR
+  - WiFi status (AP/Client mode with SSID)
+  - Modbus slave ID
   - System metrics (uptime, temperature, RAM, CPU)
-  - SF₆ sensor data (density, pressure, temperature)
+  - SF₆ sensor data with text labels (density, pressure, temperature)
 
-**Note:** The display is fully implemented using the [Heltec E-Ink Library](https://github.com/todd-herbert/heltec-eink-modules) with custom bitmap font rendering. Display rotation can be configured in src/main.cpp (DISPLAY_ROTATION define).
+**Note:** The display uses partial refresh mode for fast, flicker-free updates. A full refresh occurs every 10 updates to clear any ghosting. Display rotation is configured in src/config.h (DISPLAY_ROTATION define).
 
 ## Hardware Requirements
 
@@ -146,7 +156,7 @@ GND    ------------- GND ----------- GND
 - The E290's 2.9" E-Ink display shows real-time Modbus register data
 - The LoRa module transmits data over LoRaWAN (framework ready for full stack)
 - The 8MB PSRAM provides plenty of memory for display buffers and future features
-- WiFi AP configuration portal works as usual - connect to "ESP32-Modbus-Config"
+- WiFi AP configuration portal works as usual - connect to "stationsdata-XXXX"
 - The board's USB Type-C port handles both programming and serial monitoring
 
 ## E-Ink Display Configuration
@@ -209,7 +219,7 @@ if (now - last_display_update >= 30000) {  // Change 30000 to desired ms
 
 ### Display Rotation
 
-The display orientation can be configured in `src/main.cpp`:
+The display orientation can be configured in `src/config.h`:
 
 ```cpp
 #define DISPLAY_ROTATION 3  // 0=Portrait, 1=Landscape, 2=Portrait inverted, 3=Landscape inverted
@@ -219,64 +229,70 @@ The display orientation can be configured in `src/main.cpp`:
 
 ### Getting LoRaWAN Credentials
 
-The Vision Master E290 **automatically generates unique LoRaWAN credentials on first boot**:
+The Vision Master E290 **automatically generates unique LoRaWAN credentials for up to 4 profiles on first boot**:
 
-- **DevEUI** - Generated from ESP32 MAC address (ensures uniqueness)
-- **JoinEUI (AppEUI)** - Randomly generated 8 bytes
-- **AppKey** - Randomly generated 16 bytes
+**Per Profile Credentials:**
+- **DevEUI** - Generated from ESP32 MAC address with unique suffix per profile
+- **JoinEUI (AppEUI)** - Randomly generated 8 bytes per profile
+- **AppKey** - Randomly generated 16 bytes per profile
 - **NwkKey** - Copy of AppKey (for LoRaWAN 1.0.x compatibility)
+- **Payload Format** - Configurable per profile (Adeunis or Vistron)
+- **Auto-rotation** - Optionally rotate through enabled profiles
 
 **On first boot, the credentials are:**
-1. Automatically generated using hardware RNG
-2. Saved to NVS (Non-Volatile Storage)
+1. Automatically generated for all 4 profiles using hardware RNG
+2. Saved to NVS (Non-Volatile Storage) with per-profile nonce tracking
 3. Printed to serial console
 4. Displayed in the web interface (LoRaWAN tab)
 
-**To register your device:**
-1. Boot the device and check serial console for credentials, or
+**To register your devices:**
+1. Boot the device and check serial console for all profile credentials, or
 2. Connect to web interface at https://stationsdata.local
-3. Navigate to **LoRaWAN tab** to view credentials
-4. Copy credentials to your LoRaWAN network server:
+3. Navigate to **LoRaWAN tab** to view all profile credentials
+4. Register each enabled profile in your LoRaWAN network server:
    - [The Things Network (TTN)](https://www.thethingsnetwork.org/) - Free, community-run
    - [Chirpstack](https://www.chirpstack.io/) - Self-hosted option
    - Commercial providers (AWS IoT, Helium, etc.)
+5. By default, Profile 0 and Profile 1 are enabled with auto-rotation
 
 ### Configuring LoRaWAN
 
-**Credentials are automatically generated on first boot** - no manual configuration needed!
+**Credentials for 4 profiles are automatically generated on first boot** - no manual configuration needed!
 
-**To view or change credentials:**
+**Multi-Profile Configuration:**
 1. Access web interface at https://stationsdata.local
 2. Navigate to **LoRaWAN tab**
-3. View current credentials
-4. (Optional) Update credentials if needed
+3. View credentials for all 4 profiles
+4. Enable/disable individual profiles as needed
+5. Configure payload format per profile (Adeunis or Vistron)
+6. Enable/disable auto-rotation between profiles
+7. Register enabled profiles in your LoRaWAN network server
+
+**Profile Management:**
+- **Profile 0-3:** Each has unique DevEUI, JoinEUI, AppKey
+- **Per-profile nonce tracking:** Independent DevNonce for each profile
+- **Auto-rotation:** Automatically switches between enabled profiles
+- **Startup uplinks:** Sends initial uplink from each enabled profile on boot
+- **Payload formats:**
+  - Adeunis Modbus SF6: 10 bytes, compact format
+  - Vistron Lora Mod Con: 16 bytes, extended format
 
 **To change LoRaWAN region:**
 
-Edit `src/main.cpp` (line ~3089) to change from EU868 to another region:
+Edit `src/config.h` to change from EU868 to another region:
 
 ```cpp
-// Current: EU868 (default)
-LoRaWANNode node(&radio, &EU868);
-
-// Change to US915:
-LoRaWANNode node(&radio, &US915);
-
-// Other options: AS923, AU915, IN865, etc.
+// See LORAWAN_REGION define in config.h
+// Options: EU868, US915, AS923, AU915, IN865, etc.
 ```
 
 **To change transmission interval:**
 
-Edit `src/main.cpp` in the `loop()` function (line ~365):
+Edit `src/config.h`:
 
 ```cpp
-// Send LoRaWAN uplink every 5 minutes (if joined)
-if (lorawan_joined && (now - last_lorawan_uplink >= 300000)) {  // 300000ms = 5 minutes
-    last_lorawan_uplink = now;
-    send_lorawan_uplink();
-}
-
-// Change to 1 minute (60000ms) or 10 minutes (600000ms) as needed
+#define LORAWAN_UPLINK_INTERVAL_MS 300000  // 5 minutes default
+// Change to 1 minute (60000) or 10 minutes (600000) as needed
 ```
 
 ### SX1262 Pin Configuration
@@ -293,63 +309,111 @@ The Vision Master E290 uses these GPIO pins for the SX1262 LoRa module:
 | BUSY     | GPIO 13  | Busy indicator |
 | DIO1     | GPIO 14  | IRQ interrupt |
 
-**Note:** These pins are pre-configured in `src/main.cpp` for the Vision Master E290.
+**Note:** These pins are pre-configured in `src/config.h` for the Vision Master E290.
 
-### LoRaWAN Payload Format
+### LoRaWAN Payload Formats
 
-The device sends Modbus data in a compact binary format:
+The device supports two payload formats (configurable per profile):
 
-**Payload Format (18 bytes total):**
+**Format 1: Adeunis Modbus SF6 (10 bytes)**
 ```
-Byte  0:     Message Type (0x03 = Both registers)
-Byte  1-2:   Sequential Counter (uint16_t)
-Byte  3-4:   Uptime (seconds, uint16_t)
-Byte  5-6:   Free Heap (KB, uint16_t)
-Byte  7-8:   Temperature × 10 (uint16_t)
-Byte  9:     WiFi Enabled (0/1)
-Byte 10:     WiFi Clients (uint8_t)
-Byte 11-12:  SF₆ Density (×100, uint16_t)
-Byte 13-14:  SF₆ Pressure @20°C (×10, uint16_t)
-Byte 15-16:  SF₆ Temperature (×10, uint16_t)
-Byte 17-18:  SF₆ Pressure Variance (×10, uint16_t)
+Byte  0-1:   Reserved/Header (for decoder compatibility)
+Byte  2-3:   SF₆ Density (×100, uint16_t) - kg/m³
+Byte  4-5:   SF₆ Pressure @20°C (×10, uint16_t) - kPa
+Byte  6-7:   SF₆ Temperature (×10, uint16_t) - K
+Byte  8-9:   SF₆ Pressure Variance (×10, uint16_t) - kPa
 ```
+
+**Format 2: Vistron Lora Mod Con (16 bytes)**
+```
+Byte  0:     Frame Type (3 = Periodic uplink)
+Byte  1-3:   Error Code (3 bytes)
+Byte  4-7:   Uplink Counter (uint32_t)
+Byte  8-9:   SF₆ Density (×100, uint16_t) - kg/m³
+Byte 10-11:  SF₆ Pressure @20°C (×10, uint16_t) - kPa  
+Byte 12-13:  SF₆ Temperature (×10, uint16_t) - K
+Byte 14-15:  SF₆ Absolute Pressure (×10, uint16_t) - kPa
+```
+
+**Format Selection:**
+- Configured per profile in web interface (LoRaWAN tab)
+- Adeunis format: Compact, compatible with Adeunis SF6 decoders
+- Vistron format: Extended, includes error tracking and uplink counter
 
 ### LoRaWAN Implementation Details
 
 The project uses **RadioLib** (v7.4.0+) for full LoRaWAN functionality:
 
-- **OTAA Join:** Automatic Over-The-Air Activation with credential management
+- **OTAA Join:** Automatic Over-The-Air Activation with per-profile credential management
+- **Multi-Profile Support:** Up to 4 independent LoRaWAN profiles with auto-rotation
+- **Per-Profile Nonces:** Independent DevNonce tracking for each profile (prevents replay attacks)
 - **Session Persistence:** Join sessions saved to NVS, survives reboots
 - **Uplink/Downlink:** Both supported with proper MAC command handling
 - **Region Support:** Configured for EU868, can be changed to US915, AS923, AU915, etc.
-- **Status Display:** Join status and uplink counter shown on E-Ink display
+- **Status Display:** Join status, active DevEUIs, and uplink counter shown on E-Ink display
+- **Automatic Join:** Attempts to join on boot and auto-retries on failure
 
-The LoRaWAN stack is fully operational - just configure your credentials in `src/main.cpp`.
+The LoRaWAN stack is fully operational with multi-profile support and automatic rotation.
 
 ### Decoding LoRaWAN Payloads
 
-On your LoRaWAN server (TTN, Chirpstack), use this decoder:
+On your LoRaWAN server (TTN, Chirpstack), use the appropriate decoder for your payload format:
+
+**Adeunis Modbus SF6 Decoder (10 bytes):**
 
 ```javascript
 function decodeUplink(input) {
-  var data = {};
   var bytes = input.bytes;
+  var port = input.fPort;
 
-  if (bytes[0] === 0x03) { // Both registers
-    data.counter = (bytes[1] << 8) | bytes[2];
-    data.uptime_sec = (bytes[3] << 8) | bytes[4];
-    data.free_heap_kb = (bytes[5] << 8) | bytes[6];
-    data.temperature_c = ((bytes[7] << 8) | bytes[8]) / 10.0;
-    data.wifi_enabled = bytes[9];
-    data.wifi_clients = bytes[10];
-    data.sf6_density_kgm3 = ((bytes[11] << 8) | bytes[12]) / 100.0;
-    data.sf6_pressure_kpa = ((bytes[13] << 8) | bytes[14]) / 10.0;
-    data.sf6_temperature_k = ((bytes[15] << 8) | bytes[16]) / 10.0;
-    data.sf6_pressure_var_kpa = ((bytes[17] << 8) | bytes[18]) / 10.0;
+  if (port !== 1 || bytes.length !== 10) {
+    return {
+      data: {},
+      warnings: ["Invalid port or payload length"],
+      errors: []
+    };
   }
 
   return {
-    data: data,
+    data: {
+      sf6_density: ((bytes[2] << 8) | bytes[3]) / 100.0,      // kg/m³
+      sf6_pressure_20c: ((bytes[4] << 8) | bytes[5]) / 10.0,   // kPa
+      sf6_temperature_k: ((bytes[6] << 8) | bytes[7]) / 10.0,  // K
+      sf6_temperature_c: (((bytes[6] << 8) | bytes[7]) / 10.0) - 273.15, // °C
+      sf6_pressure_var: ((bytes[8] << 8) | bytes[9]) / 10.0    // kPa
+    },
+    warnings: [],
+    errors: []
+  };
+}
+```
+
+**Vistron Lora Mod Con Decoder (16 bytes):**
+
+```javascript
+function decodeUplink(input) {
+  var bytes = input.bytes;
+  var port = input.fPort;
+
+  if (port !== 1 || bytes.length !== 16) {
+    return {
+      data: {},
+      warnings: ["Invalid port or payload length"],
+      errors: []
+    };
+  }
+
+  return {
+    data: {
+      frame_type: bytes[0],
+      error_code: (bytes[1] << 16) | (bytes[2] << 8) | bytes[3],
+      uplink_count: (bytes[4] << 24) | (bytes[5] << 16) | (bytes[6] << 8) | bytes[7],
+      sf6_density: ((bytes[8] << 8) | bytes[9]) / 100.0,       // kg/m³
+      sf6_pressure_20c: ((bytes[10] << 8) | bytes[11]) / 10.0,  // kPa
+      sf6_temperature_k: ((bytes[12] << 8) | bytes[13]) / 10.0, // K
+      sf6_temperature_c: (((bytes[12] << 8) | bytes[13]) / 10.0) - 273.15, // °C
+      sf6_pressure_abs: ((bytes[14] << 8) | bytes[15]) / 10.0   // kPa
+    },
     warnings: [],
     errors: []
   };
@@ -369,13 +433,13 @@ function decodeUplink(input) {
 
 On boot, the device creates a WiFi Access Point for 20 minutes:
 
-- **SSID:** `ESP32-Modbus-Config-XXXX` (XXXX = last 4 hex digits of device MAC address)
+- **SSID:** `stationsdata-XXXX` (XXXX = last 4 hex digits of device MAC address)
 - **Password:**
-  - Development mode: `modbus123` (default, fixed)
-  - Production mode: Auto-generated 16-character password (shown on E-Ink display)
+  - Development mode (`MODE_PRODUCTION = false`): `modbus123` (default, fixed)
+  - Production mode (`MODE_PRODUCTION = true`): Auto-generated 16-character password (shown on E-Ink display)
 - **Web Interface (AP Mode):** https://192.168.4.1
 - **Web Interface (Client Mode):** https://stationsdata.local
-- **Web Authentication:** Username: `admin`, Password: `admin` (change immediately!)
+- **Web Authentication:** Default credentials - Username: `admin`, Password: `admin` (configurable via Security tab)
 
 **Note:** Your browser will show a security warning due to the self-signed certificate. This is expected - click "Advanced" and proceed to accept the certificate.
 
@@ -452,10 +516,10 @@ The device supports two WiFi modes:
 
 1. **Access Point (AP) Mode:**
    - Creates its own WiFi network on boot
-   - SSID: `ESP32-Modbus-Config-XXXX` (XXXX = last 4 hex digits of MAC address)
+   - SSID: `stationsdata-XXXX` (XXXX = last 4 hex digits of MAC address)
    - Password:
      - Development mode (`MODE_PRODUCTION = false`): `modbus123`
-     - Production mode (`MODE_PRODUCTION = true`): Auto-generated 16-character password, displayed on E-Ink screen for 20 seconds
+     - Production mode (`MODE_PRODUCTION = true`): Auto-generated 16-character password, displayed on E-Ink screen
    - IP Address: `192.168.4.1`
    - Access via: https://192.168.4.1 or https://stationsdata.local
    - Automatically disables after 20 minutes or when connected as client
@@ -470,7 +534,7 @@ The device supports two WiFi modes:
    - Auto-reconnects if connection is lost
 
 **Production vs Development Mode:**
-- Set in `src/main.cpp` line 38: `#define MODE_PRODUCTION false`
+- Set in `src/config.h`: `#define MODE_PRODUCTION false`
 - Development mode: Fixed password `modbus123` (easier for testing)
 - Production mode: Random password generated on first boot, saved to NVS, displayed on screen
 
@@ -693,7 +757,7 @@ Modbus RTU slave started on UART1
 Slave ID: 1
 
 WiFi AP Configuration:
-  SSID: ESP32-Modbus-Config-A1B2
+  SSID: stationsdata-A1B2
   Password: modbus123 (or auto-generated in production mode)
   IP: 192.168.4.1
   mDNS: stationsdata.local

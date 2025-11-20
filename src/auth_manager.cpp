@@ -198,7 +198,7 @@ void AuthManager::save() {
 }
 
 void AuthManager::load() {
-    if (!preferences.begin("auth", true)) {  // Read-only
+    if (!preferences.begin("auth", false)) {  // Read-write (creates if not exists)
         Serial.println(">>> Failed to open auth preferences");
         return;
     }

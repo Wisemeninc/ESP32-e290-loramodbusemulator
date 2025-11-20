@@ -145,9 +145,10 @@ void loop() {
         static bool tcp_initialized = false;
         if (!tcp_initialized) {
             Preferences prefs;
-            prefs.begin("modbus", true);
-            tcp_initialized = prefs.getBool("tcp_enabled", false);
-            prefs.end();
+            if (prefs.begin("modbus", false)) {  // Read-write (creates if not exists)
+                tcp_initialized = prefs.getBool("tcp_enabled", false);
+                prefs.end();
+            }
         }
         
         if (tcp_initialized) {

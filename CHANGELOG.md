@@ -5,6 +5,25 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.58] - 2025-11-20
+
+### Changed
+- **WiFi AP SSID**: Changed from "ESP32-Modbus-Config-XXXX" to "stationsdata-XXXX"
+  - More concise and professional naming convention
+  - XXXX = last 4 hex digits of device MAC address
+  - Updated code in wifi_manager.cpp
+  - Updated display to show full SSID instead of truncated version
+  - Updated all documentation references
+
+## [1.57] - 2025-11-20
+
+### Fixed
+- **NVS Preferences**: Eliminated `nvs_open failed: NOT_FOUND` errors on first boot
+  - Changed all `preferences.begin()` calls from read-only to read-write mode
+  - NVS namespaces now automatically created if they don't exist
+  - Fixed: auth_manager, sf6_emulator, wifi_manager, lorawan_handler, main loop
+  - Prevents harmless but confusing error messages in serial console
+
 ## [1.56] - 2025-11-20
 
 ### Added

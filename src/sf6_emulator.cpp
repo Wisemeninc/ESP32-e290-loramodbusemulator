@@ -69,7 +69,7 @@ void SF6Emulator::resetToDefaults() {
 }
 
 void SF6Emulator::load() {
-    if (!preferences.begin("sf6", true)) {  // Read-only
+    if (!preferences.begin("sf6", false)) {  // Read-write (creates if not exists)
         Serial.println(">>> Failed to open sf6 preferences");
         return;
     }
