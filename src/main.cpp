@@ -167,6 +167,7 @@ void loop() {
             modbusHandler.getInputRegisters(),
             wifiManager.isAPActive(),
             wifiManager.isClientConnected(),
+            wifiManager.getAPSSID().c_str(),
             modbusHandler.getSlaveId(),
             lorawanHandler.isJoined(),
             lorawanHandler.getUplinkCount(),

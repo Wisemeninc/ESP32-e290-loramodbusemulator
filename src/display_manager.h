@@ -27,6 +27,7 @@ public:
         const InputRegisters& input,
         bool wifi_ap_active,
         bool wifi_client_connected,
+        const char* ap_ssid,
         uint8_t modbus_slave_id,
         bool lorawan_joined,
         uint32_t lorawan_uplink_count,

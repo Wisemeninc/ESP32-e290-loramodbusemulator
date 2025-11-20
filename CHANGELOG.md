@@ -5,6 +5,18 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.53] - 2025-11-20
+
+### Added
+- **Display Enhancements**: Improved E-Ink display information density
+  - AP Mode: Now shows AP SSID suffix (e.g., "AP 2 clients A1B2")
+  - LoRaWAN: Shows all enabled profile DevEUIs in compact format (e.g., "..7CEB/..9AB2")
+  - Allows quick identification of device and active profiles at a glance
+
+### Changed
+- Display Manager: Added `ap_ssid` parameter to `update()` function
+- LoRaWAN Handler: Added `getEnabledDevEUIs()` method to retrieve enabled profiles
+
 ## [1.52] - 2025-11-20
 
 ### Changed

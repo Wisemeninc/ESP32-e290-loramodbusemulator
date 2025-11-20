@@ -1,5 +1,6 @@
 #include "display_manager.h"
 #include "modbus_handler.h"  // For register structures
+#include "lorawan_handler.h"  // For LoRaWANHandler
 #include <WiFi.h>
 
 // Global instance
@@ -112,6 +113,7 @@ void DisplayManager::update(
     const InputRegisters& input,
     bool wifi_ap_active,
     bool wifi_client_connected,
+    const char* ap_ssid,
     uint8_t modbus_slave_id,
     bool lorawan_joined,
     uint32_t lorawan_uplink_count,
@@ -201,10 +203,20 @@ void DisplayManager::update(
         drawText(35, 82, ssid.c_str(), 1);
         drawText(110, 82, WiFi.localIP().toString().c_str(), 1);
     } else if (holding.wifi_enabled) {
-        // AP mode - show client count
+        // AP mode - show client count and SSID
         drawText(35, 82, "AP", 1);
         drawNumber(55, 82, holding.wifi_clients, 0, 1);
         drawText(75, 82, "clients", 1);
+        // Show AP SSID (truncated to fit)
+        if (ap_ssid && strlen(ap_ssid) > 0) {
+            String ssid_str = String(ap_ssid);
+            // Extract last part after hyphen for compact display (e.g., "A1B2" from "ESP32-Modbus-Config-A1B2")
+            int lastHyphen = ssid_str.lastIndexOf('-');
+            if (lastHyphen > 0) {
+                ssid_str = ssid_str.substring(lastHyphen + 1);
+            }
+            drawText(115, 82, ssid_str.c_str(), 1);
+        }
     } else {
         drawText(35, 82, "OFF", 1);
     }
@@ -219,10 +231,25 @@ void DisplayManager::update(
         drawText(35, 93, "NOT JOINED", 1);
     }
 
-    // Display DevEUI (last 4 bytes as hex)
-    char deveui_str[16];
-    snprintf(deveui_str, sizeof(deveui_str), "EUI:%08X", (uint32_t)(devEUI & 0xFFFFFFFF));
-    drawText(150, 93, deveui_str, 1);
+    // Display enabled DevEUIs (last 4 hex digits each)
+    // Format: ..XXXX/..YYYY/..ZZZZ for multiple enabled profiles
+    char eui_str[50];
+    uint64_t enabled_euis[4];
+    extern LoRaWANHandler lorawanHandler;
+    int eui_count = lorawanHandler.getEnabledDevEUIs(enabled_euis, 4);
+    
+    if (eui_count > 0) {
+        strcpy(eui_str, "..");
+        for (int i = 0; i < eui_count; i++) {
+            char suffix[8];
+            snprintf(suffix, sizeof(suffix), "%04X", (uint16_t)(enabled_euis[i] & 0xFFFF));
+            strcat(eui_str, suffix);
+            if (i < eui_count - 1) {
+                strcat(eui_str, "/..");
+            }
+        }
+        drawText(150, 93, eui_str, 1);
+    }
 
     // Row 9: System info - scale 1
     drawText(3, 104, "Uptime:", 1);

@@ -72,6 +72,7 @@ public:
     void getAppKey(uint8_t* buffer) const;
     void getNwkKey(uint8_t* buffer) const;
     uint32_t getDevAddr() const;
+    int getEnabledDevEUIs(uint64_t* euis, int max_count) const;
 
     // Payload builders
     size_t buildAdeunisModbusSF6Payload(uint8_t* payload, const InputRegisters& input);

@@ -1360,3 +1360,13 @@ uint32_t LoRaWANHandler::getDevAddr() const {
     }
     return 0;
 }
+
+int LoRaWANHandler::getEnabledDevEUIs(uint64_t* euis, int max_count) const {
+    int count = 0;
+    for (int i = 0; i < MAX_LORA_PROFILES && count < max_count; i++) {
+        if (profiles[i].enabled) {
+            euis[count++] = profiles[i].devEUI;
+        }
+    }
+    return count;
+}

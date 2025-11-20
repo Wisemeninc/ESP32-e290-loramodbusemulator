@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 152  // v1.52 - Code refactoring, SSL crash fix, LoRaWAN auto-rotation fix
+#define FIRMWARE_VERSION 153  // v1.53 - E-Ink display improvements
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
