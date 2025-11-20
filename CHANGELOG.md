@@ -5,6 +5,24 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.55] - 2025-11-20
+
+### Changed
+- **E-Ink Display**: Improved startup screen with device info instead of test pattern
+  - Now shows device name, firmware version, and initialization status
+  - Removed unnecessary boxes and diagonal lines
+- **Display Colors**: Changed from inverted (white-on-black) to normal (black-on-white)
+  - More natural appearance and better readability
+  - Lower power consumption with less black pixels
+
+## [1.54] - 2025-11-20
+
+### Changed
+- **E-Ink Display**: Enabled partial refresh mode to eliminate flicker during updates
+  - Display now uses fast partial refresh (no black/white inversion flicker)
+  - Automatic full refresh every 10 updates to prevent ghosting
+  - Much faster display updates with better user experience
+
 ## [1.53] - 2025-11-20
 
 ### Added

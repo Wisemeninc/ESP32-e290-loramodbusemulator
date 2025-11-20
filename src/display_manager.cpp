@@ -57,7 +57,7 @@ const uint8_t DisplayManager::font5x7[][5] = {
 // CONSTRUCTOR
 // ============================================================================
 
-DisplayManager::DisplayManager() : rotation(3) {
+DisplayManager::DisplayManager() : rotation(3), update_count(0) {
     // Display object is initialized by heltec-eink-modules library
 }
 
@@ -72,11 +72,14 @@ void DisplayManager::begin(int rot) {
 
     // The Heltec library handles VextOn() and pin setup automatically
     display.setRotation(rotation);
+    
+    // Enable partial refresh mode (fast mode) to reduce flicker
+    display.fastmodeOn();
 
     showStartupScreen();
 
-    Serial.println("E-Ink display initialized!");
-    Serial.println("Display shows: Border, boxes, and diagonal lines");
+    Serial.println("E-Ink display initialized (partial refresh enabled)!");
+    Serial.println("Startup screen displayed");
 }
 
 // ============================================================================
@@ -86,24 +89,28 @@ void DisplayManager::begin(int rot) {
 void DisplayManager::showStartupScreen() {
     display.clear();
 
-    // Fill background black
-    display.fillRect(0, 0, 296, 128, BLACK);
+    // White background (normal, not inverted)
+    display.fillRect(0, 0, 296, 128, WHITE);
 
-    // Draw border (white)
-    display.drawRect(0, 0, 296, 128, WHITE);
+    // Draw border (black)
+    display.drawRect(0, 0, 296, 128, BLACK);
 
-    // Draw title box
-    display.drawLine(0, 30, 295, 30, WHITE);
-
-    // Draw some rectangles to show it's working (white on black)
-    display.fillRect(10, 40, 50, 20, WHITE);  // Filled box
-    display.drawRect(70, 40, 50, 20, WHITE);  // Outline box
-    display.fillRect(130, 40, 50, 20, WHITE); // Filled box
-
-    // Draw diagonal lines in bottom area
-    display.drawLine(10, 70, 60, 110, WHITE);
-    display.drawLine(70, 70, 120, 110, WHITE);
-    display.drawLine(130, 70, 180, 110, WHITE);
+    // Title
+    drawText(60, 10, "Vision Master E290", 2);
+    
+    // Subtitle
+    drawText(40, 40, "SF6 Modbus Gateway", 1);
+    
+    // Version
+    char version_str[20];
+    snprintf(version_str, sizeof(version_str), "Firmware v%d.%02d", FIRMWARE_VERSION / 100, FIRMWARE_VERSION % 100);
+    drawText(70, 60, version_str, 1);
+    
+    // Status
+    drawText(80, 85, "Initializing...", 1);
+    
+    // Bottom text
+    drawText(50, 110, "LoRaWAN + Modbus / TCP", 1);
 
     display.update();
 }
@@ -123,11 +130,11 @@ void DisplayManager::update(
 ) {
     display.clear();
 
-    // Fill background with black for inverted display
-    display.fillRect(0, 0, 296, 128, BLACK);
+    // Fill background with white (normal display, not inverted)
+    display.fillRect(0, 0, 296, 128, WHITE);
 
-    // Draw border (white on black)
-    display.drawRect(0, 0, 296, 128, WHITE);
+    // Draw border (black on white)
+    display.drawRect(0, 0, 296, 128, BLACK);
 
     // WiFi status (top right corner) - scale 1
     drawText(130, 2, "W:", 1);
@@ -153,7 +160,7 @@ void DisplayManager::update(
 
     // Title area - scale 1 for compactness
     drawText(3, 2, "SF6 Monitor", 1);
-    display.drawLine(0, 11, 295, 11, WHITE);
+    display.drawLine(0, 11, 295, 11, BLACK);
 
     // Convert temperature to Celsius
     float temp_celsius = input.sf6_temperature / 10.0 - 273.15;
@@ -184,7 +191,7 @@ void DisplayManager::update(
     drawText(210, 58, "Hz", 1);
 
     // Divider line
-    display.drawLine(0, 68, 295, 68, WHITE);
+    display.drawLine(0, 68, 295, 68, BLACK);
 
     // Row 6: Modbus info - scale 1
     drawText(3, 71, "Modbus ID:", 1);
@@ -270,7 +277,17 @@ void DisplayManager::update(
     snprintf(version_str, sizeof(version_str), "v%d.%02d", FIRMWARE_VERSION / 100, FIRMWARE_VERSION % 100);
     drawText(250, 115, version_str, 1);
 
-    display.update();
+    // Use partial refresh for most updates (no flicker)
+    // Do full refresh every 10 updates to clear ghosting
+    update_count++;
+    if (update_count >= 10) {
+        display.fastmodeOff();  // Full refresh
+        display.update();
+        display.fastmodeOn();   // Re-enable partial for next updates
+        update_count = 0;
+    } else {
+        display.update();  // Partial refresh (fast, no flicker)
+    }
 
     // Debug output
     Serial.println("Display updated - SF6 sensors with text labels");
@@ -288,12 +305,12 @@ void DisplayManager::update(
 
 void DisplayManager::showWiFiCredentials(const char* ssid, const char* password) {
     display.clear();
-    display.fillRect(0, 0, 296, 128, BLACK);
-    display.drawRect(0, 0, 296, 128, WHITE);
+    display.fillRect(0, 0, 296, 128, WHITE);
+    display.drawRect(0, 0, 296, 128, BLACK);
 
     // Title
     drawText(50, 5, "WiFi AP Credentials", 1);
-    display.drawLine(0, 17, 295, 17, WHITE);
+    display.drawLine(0, 17, 295, 17, BLACK);
 
     // SSID
     drawText(5, 25, "SSID:", 1);
@@ -342,7 +359,7 @@ void DisplayManager::drawChar(int x, int y, char c, int scale) {
             for (int row = 0; row < 7; row++) {
                 if (line & (1 << row)) {
                     // Draw scaled pixel (scale x scale rectangle)
-                    display.fillRect(x + col * scale, y + row * scale, scale, scale, WHITE);
+                    display.fillRect(x + col * scale, y + row * scale, scale, scale, BLACK);
                 }
             }
         }

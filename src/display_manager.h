@@ -45,6 +45,7 @@ public:
 private:
     EInkDisplay_VisionMasterE290 display;
     int rotation;
+    uint8_t update_count;  // Track updates for periodic full refresh
 
     // Bitmap font data (5x7 font)
     static const uint8_t font5x7[][5];
