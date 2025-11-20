@@ -96,7 +96,7 @@ void DisplayManager::showStartupScreen() {
     display.drawRect(0, 0, 296, 128, BLACK);
 
     // Title
-    drawText(60, 10, "Vision Master E290", 2);
+    drawText(60, 10, "Stationsdata", 2);
     
     // Subtitle
     drawText(40, 40, "SF6 Modbus Gateway", 1);
