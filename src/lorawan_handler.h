@@ -18,7 +18,7 @@ public:
     LoRaWANHandler();
 
     // Initialization
-    void begin();
+    void begin(bool loadConfig = true);
 
     // OTAA Join
     bool join();
@@ -26,6 +26,12 @@ public:
 
     // Uplink/Downlink
     bool sendUplink(const InputRegisters& input);
+    
+    // Main processing loop (handles auto-rotation and periodic uplinks)
+    void process(const InputRegisters& input);
+
+    // Startup sequence (send initial uplink from all enabled profiles)
+    void performStartupSequence(const InputRegisters& input);
 
     // Credentials management (legacy - for backward compatibility)
     void loadCredentials();
@@ -98,6 +104,10 @@ private:
     uint32_t downlink_count;
     int16_t last_rssi;
     float last_snr;
+    
+    // Timing
+    unsigned long last_uplink_time;
+    unsigned long last_profile_uplinks[MAX_LORA_PROFILES];
 
     // Helper functions
     void initializeRadio();

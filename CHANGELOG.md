@@ -5,6 +5,28 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.52] - 2025-11-20
+
+### Changed
+- **Code Refactoring**: Major architectural overhaul to improve maintainability and stability
+  - Split monolithic `main.cpp` into separate components:
+    - `SF6Emulator`: Encapsulates sensor simulation logic
+    - `WebServerManager`: Manages HTTPS server and request handlers
+    - `web_pages.h`: Stores HTML templates in PROGMEM
+  - Reduced `main.cpp` size from >3000 lines to ~200 lines
+  - Improved global state management
+
+### Fixed
+- **SSL Crash**: Fixed `StoreProhibited` panic in `HTTPS_Server_Generic` library
+  - Moved web server to a dedicated FreeRTOS task pinned to Core 0
+  - Increased web server task stack size to 8KB to handle SSL operations safely
+- **LoRaWAN Auto-Rotation**: Restored and fixed multi-profile auto-rotation logic
+  - Correctly cycles through enabled profiles
+  - Staggers uplinks by 1 minute when multiple profiles are active
+  - Ensures nonces are saved to NVS to prevent replay attacks
+- **Web Interface**: Fixed issues with WiFi scanning and LoRaWAN configuration pages
+- **Registers Page**: Now displays all Holding (0-11) and Input (0-8) registers
+
 ## [1.51] - 2025-11-19
 
 ### Added

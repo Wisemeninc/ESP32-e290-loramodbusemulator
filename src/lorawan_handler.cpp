@@ -19,8 +19,10 @@ LoRaWANHandler::LoRaWANHandler() :
     uplink_count(0),
     downlink_count(0),
     last_rssi(0),
-    last_snr(0.0) {
+    last_snr(0.0),
+    last_uplink_time(0) {
 
+    memset(last_profile_uplinks, 0, sizeof(last_profile_uplinks));
     memset(appKey, 0, sizeof(appKey));
     memset(nwkKey, 0, sizeof(nwkKey));
     
@@ -36,20 +38,34 @@ LoRaWANHandler::LoRaWANHandler() :
 // INITIALIZATION
 // ============================================================================
 
-void LoRaWANHandler::begin() {
+void LoRaWANHandler::begin(bool loadConfig) {
     Serial.println("\n========================================");
     Serial.println("Initializing LoRaWAN...");
     Serial.println("========================================");
 
-    // Initialize SPI bus for LoRa radio
-    Serial.println("Initializing LoRa radio on SPI bus...");
-    Serial.printf("  LoRa pins: SCK=%d, MISO=%d, MOSI=%d, NSS=%d\n", LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
-    Serial.printf("  LoRa control: DIO1=%d, RESET=%d, BUSY=%d\n", LORA_DIO1, LORA_NRST, LORA_BUSY);
+    // Clean up existing instances if re-initializing
+    if (node) {
+        delete node;
+        node = nullptr;
+    }
+    if (radio) {
+        delete radio;
+        radio = nullptr;
+    }
 
-    Serial.print("Initializing SPI bus... ");
-    SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
-    Serial.println("done");
-    delay(100);
+    // Initialize SPI bus for LoRa radio (only once)
+    static bool spi_initialized = false;
+    if (!spi_initialized) {
+        Serial.println("Initializing LoRa radio on SPI bus...");
+        Serial.printf("  LoRa pins: SCK=%d, MISO=%d, MOSI=%d, NSS=%d\n", LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
+        Serial.printf("  LoRa control: DIO1=%d, RESET=%d, BUSY=%d\n", LORA_DIO1, LORA_NRST, LORA_BUSY);
+
+        Serial.print("Initializing SPI bus... ");
+        SPI.begin(LORA_SCK, LORA_MISO, LORA_MOSI, LORA_NSS);
+        Serial.println("done");
+        delay(100);
+        spi_initialized = true;
+    }
 
     // Create radio instance
     radio = new SX1262(new Module(LORA_NSS, LORA_DIO1, LORA_NRST, LORA_BUSY));
@@ -57,11 +73,13 @@ void LoRaWANHandler::begin() {
     initializeRadio();
     configureRadio();
 
-    // Load profiles (generates if not present) - New multi-profile system
-    loadProfiles();
-    
-    // Set active profile (loads credentials into legacy fields)
-    setActiveProfile(active_profile_index);
+    if (loadConfig) {
+        // Load profiles (generates if not present) - New multi-profile system
+        loadProfiles();
+        
+        // Set active profile (loads credentials into legacy fields)
+        setActiveProfile(active_profile_index);
+    }
     
     // Print active profile info
     printProfile(active_profile_index);
@@ -193,6 +211,154 @@ bool LoRaWANHandler::isJoined() const {
 // UPLINK/DOWNLINK
 // ============================================================================
 
+void LoRaWANHandler::performStartupSequence(const InputRegisters& input) {
+    Serial.println("\n========================================");
+    Serial.println("Startup Uplink Sequence");
+    Serial.println("========================================");
+    
+    int enabled_count = getEnabledProfileCount();
+    Serial.printf("Sending initial uplinks from %d enabled profile(s)...\n\n", enabled_count);
+    
+    // Track which profiles we've sent from
+    int uplinks_sent = 0;
+    
+    // Get initial profile index to restore later
+    uint8_t initial_profile = active_profile_index;
+    
+    // Iterate through all profiles and send from enabled ones
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        if (!profiles[i].enabled) continue;
+        
+        // Switch to this profile
+        Serial.printf("\n>>> Switching to Profile %d: %s\n", i, profiles[i].name);
+        setActiveProfile(i);
+        begin(false); // Re-initialize radio but DON'T reload profiles from NVS
+        
+        // Join with this profile
+        Serial.printf(">>> Joining network with Profile %d...\n", i);
+        if (join()) {
+            Serial.printf(">>> Join successful for Profile %d!\n", i);
+            delay(1000);
+            
+            // Send uplink
+            Serial.printf(">>> Sending startup uplink from Profile %d\n", i);
+            sendUplink(input);
+            uplinks_sent++;
+            
+            // Mark this profile as having sent recently
+            last_profile_uplinks[i] = millis();
+            last_uplink_time = millis();
+            
+            Serial.printf(">>> Uplink sent from Profile %d (%d/%d)\n", i, uplinks_sent, enabled_count);
+            
+            // Delay before next profile (10 seconds to allow RX windows to complete)
+            if (uplinks_sent < enabled_count) {
+                Serial.println(">>> Waiting 10 seconds before next profile...");
+                delay(10000);
+            }
+        } else {
+            Serial.printf(">>> Join failed for Profile %d, skipping uplink\n", i);
+        }
+    }
+    
+    Serial.println("\n========================================");
+    Serial.printf("Startup sequence complete: %d/%d uplinks sent\n", uplinks_sent, enabled_count);
+    Serial.println("========================================\n");
+    
+    // Return to initial profile (or keep last one if auto-rotation is on? usually restore initial)
+    // If auto-rotation is on, we might want to start from the next one in sequence, but restoring initial is safer.
+    if (active_profile_index != initial_profile) {
+        Serial.printf("\n>>> Returning to initial Profile %d for normal operation\n", initial_profile);
+        setActiveProfile(initial_profile);
+        begin(false);
+        join();
+    }
+}
+
+void LoRaWANHandler::process(const InputRegisters& input) {
+    // If not joined, try to join
+    if (!joined) {
+        static unsigned long last_join_attempt = 0;
+        if (millis() - last_join_attempt > 30000) { // Retry every 30s
+            last_join_attempt = millis();
+            Serial.println("LoRaWAN not joined, attempting to join...");
+            join();
+        }
+        return;
+    }
+
+    unsigned long now = millis();
+
+    if (auto_rotation_enabled && getEnabledProfileCount() > 1) {
+        // Multi-profile mode: Each profile sends every 5 minutes, staggered by 1 minute
+        unsigned long time_since_last = now - last_profile_uplinks[active_profile_index];
+        
+        // Check if current profile is due for transmission (5 minutes since its last uplink)
+        if (time_since_last >= 300000) {
+            Serial.printf("Profile %d is due for uplink (5min elapsed)\n", active_profile_index);
+            
+            // Send uplink from current profile
+            last_profile_uplinks[active_profile_index] = now;
+            last_uplink_time = now;
+            sendUplink(input);
+            
+            // After sending, rotate to next enabled profile and join
+            if (rotateToNextProfile()) {
+                Serial.println("Auto-rotation: Switching to next profile");
+                
+                // Re-join network with new profile credentials
+                joined = false;
+                begin(false); // Re-initialize radio
+                if (join()) {
+                    joined = true;
+                    Serial.printf("Joined with profile %d\n", active_profile_index);
+                } else {
+                    Serial.println("Failed to join after profile rotation");
+                }
+            }
+        } else {
+            // Check if we should switch to a different profile that's ready to send
+            // This ensures 1-minute staggering between profiles
+            uint8_t next_profile = getNextEnabledProfile();
+            if (next_profile != active_profile_index) {
+                unsigned long next_time_since_last = now - last_profile_uplinks[next_profile];
+                
+                // If next profile is due AND at least 1 minute has passed since any uplink
+                if (next_time_since_last >= 300000 && (now - last_uplink_time >= 60000)) {
+                    Serial.printf("Switching to profile %d which is ready to send\n", next_profile);
+                    
+                    // Rotate to next profile
+                    if (rotateToNextProfile()) {
+                        // Re-join network
+                        joined = false;
+                        begin(false);
+                        if (join()) {
+                            joined = true;
+                            Serial.printf("Joined with profile %d\n", active_profile_index);
+                            
+                            // Send immediately after joining
+                            last_profile_uplinks[next_profile] = now;
+                            last_uplink_time = now;
+                            sendUplink(input);
+                        } else {
+                            Serial.println("Failed to join with next profile");
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        // Single profile mode: Send every 5 minutes
+        if (now - last_uplink_time >= 300000) {
+            last_uplink_time = now;
+            last_profile_uplinks[active_profile_index] = now;
+            
+            Serial.printf("Sending uplink from profile %d\n", active_profile_index);
+            sendUplink(input);
+        }
+    }
+}
+
 bool LoRaWANHandler::sendUplink(const InputRegisters& input) {
     if (!joined) {
         Serial.println("LoRaWAN: Not joined, skipping uplink");
@@ -220,6 +386,9 @@ bool LoRaWANHandler::sendUplink(const InputRegisters& input) {
         case PAYLOAD_ADEUNIS_MODBUS_SF6:
             payload_size = buildAdeunisModbusSF6Payload(payload, input);
             break;
+        case PAYLOAD_VISTRON_LORA_MOD_CON:
+            payload_size = buildVistronLoraModConPayload(payload, input);
+            break;
         case PAYLOAD_CAYENNE_LPP:
             payload_size = buildCayenneLPPPayload(payload, input);
             break;
@@ -228,9 +397,6 @@ bool LoRaWANHandler::sendUplink(const InputRegisters& input) {
             break;
         case PAYLOAD_CUSTOM:
             payload_size = buildCustomPayload(payload, input);
-            break;
-        case PAYLOAD_VISTRON_LORA_MOD_CON:
-            payload_size = buildVistronLoraModConPayload(payload, input);
             break;
         default:
             payload_size = buildAdeunisModbusSF6Payload(payload, input);
