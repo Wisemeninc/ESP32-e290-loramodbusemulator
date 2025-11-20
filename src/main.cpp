@@ -42,6 +42,9 @@ void setup() {
     Serial.begin(115200);
     delay(1000);
 
+    // Initialize Display FIRST to clear screen immediately
+    displayManager.begin(DISPLAY_ROTATION);
+
     Serial.println("\n\n========================================");
     Serial.println("Vision Master E290 - Modbus RTU/TCP");
     Serial.println("========================================");
@@ -55,7 +58,7 @@ void setup() {
     // Initialize SF6 Emulator (loads values from NVS)
     sf6Emulator.begin();
 
-    // Initialize LoRaWAN (before display to avoid SPI conflict)
+    // Initialize LoRaWAN
     lorawanHandler.begin();
     
     // Perform startup uplink sequence
@@ -64,8 +67,7 @@ void setup() {
         lorawanHandler.performStartupSequence(modbusHandler.getInputRegisters());
     }
 
-    // Initialize Display
-    displayManager.begin(DISPLAY_ROTATION);
+    // Show startup screen after LoRaWAN init
     displayManager.showStartupScreen();
 
     // Initialize WiFi

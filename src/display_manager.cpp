@@ -73,6 +73,12 @@ void DisplayManager::begin(int rot) {
     // The Heltec library handles VextOn() and pin setup automatically
     display.setRotation(rotation);
     
+    // Clear any previous content immediately on boot (full refresh)
+    Serial.println("Clearing display...");
+    display.clear();
+    display.fillRect(0, 0, 296, 128, WHITE);
+    display.update();
+    
     // Enable partial refresh mode (fast mode) to reduce flicker
     display.fastmodeOn();
 
