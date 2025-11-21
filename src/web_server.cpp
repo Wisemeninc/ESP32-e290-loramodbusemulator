@@ -1118,6 +1118,8 @@ void WebServerManager::handleDebugUpdate(HTTPRequest * req, HTTPResponse * res) 
     instance->sendRedirect(res, "Debug Updated", "Settings saved.", "/security");
 }
 void WebServerManager::handleSF6Update(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
     ResourceParameters * params = req->getParams();
     std::string val;
     float d = sf6Emulator.getDensity();
@@ -1132,15 +1134,21 @@ void WebServerManager::handleSF6Update(HTTPRequest * req, HTTPResponse * res) {
     res->setStatusCode(200);
 }
 void WebServerManager::handleSF6Reset(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
     sf6Emulator.resetToDefaults();
     res->setStatusCode(200);
 }
 void WebServerManager::handleEnableAuth(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
     authManager.enable();
     authManager.save();
     instance->sendRedirect(res, "Auth Enabled", "Authentication enabled.", "/security");
 }
 void WebServerManager::handleFactoryReset(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
     // Implement factory reset logic here
     Preferences prefs;
     prefs.begin("modbus", false); prefs.clear(); prefs.end();
@@ -1155,6 +1163,8 @@ void WebServerManager::handleFactoryReset(HTTPRequest * req, HTTPResponse * res)
     ESP.restart();
 }
 void WebServerManager::handleReboot(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
     instance->sendRedirect(res, "Rebooting", "Device is restarting...", "/", 10);
     delay(1000);
     ESP.restart();

@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 159  // v1.59 - Display clears on boot before initialization
+#define FIRMWARE_VERSION 160  // v1.60 - Security: Fixed missing authentication on critical endpoints
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION

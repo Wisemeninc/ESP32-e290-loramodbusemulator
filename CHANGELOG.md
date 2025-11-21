@@ -5,6 +5,18 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.60] - 2025-11-21
+
+### Security
+- **CRITICAL FIX**: Added authentication checks to 5 unprotected web endpoints
+  - `/sf6/update` - SF6 sensor value modification now requires authentication
+  - `/sf6/reset` - SF6 reset now requires authentication
+  - `/security/enable` - Authentication enable/disable now requires authentication
+  - `/factory-reset` - Factory reset now requires authentication
+  - `/reboot` - Device reboot now requires authentication
+  - Previously these endpoints were accessible without credentials (security vulnerability)
+  - All 20 functional web endpoints now properly protected with HTTP Basic Auth
+
 ## [1.59] - 2025-11-20
 
 ### Changed
