@@ -1192,18 +1192,55 @@ void LoRaWANHandler::saveSession() {
         return;
     }
 
-    // Save nonces per profile using profile-specific key
+    // Save nonces per profile using profile-specific key with retry and verification
     char noncesKey[16];
     sprintf(noncesKey, "nonces_%d", active_profile_index);
     char hasNoncesKey[16];
     sprintf(hasNoncesKey, "has_nonces_%d", active_profile_index);
     
-    preferences.putBytes(noncesKey, noncesBuffer, noncesSize);
-    preferences.putBool(hasNoncesKey, true);
+    const int MAX_RETRIES = 3;
+    bool success = false;
+    
+    for (int attempt = 1; attempt <= MAX_RETRIES && !success; attempt++) {
+        if (attempt > 1) {
+            Serial.printf(">>> Retry attempt %d/%d...\n", attempt, MAX_RETRIES);
+            delay(10); // Short delay before retry
+        }
+        
+        // Write nonces to NVS
+        size_t written = preferences.putBytes(noncesKey, noncesBuffer, noncesSize);
+        
+        // Verify write size
+        if (written != noncesSize) {
+            Serial.printf(">>> ERROR: Nonces write failed! Expected %d bytes, wrote %d bytes\n", noncesSize, written);
+            continue; // Try again
+        }
+        
+        // Read back and verify
+        uint8_t verifyBuffer[RADIOLIB_LORAWAN_NONCES_BUF_SIZE];
+        size_t readBack = preferences.getBytes(noncesKey, verifyBuffer, noncesSize);
+        
+        if (readBack != noncesSize) {
+            Serial.printf(">>> ERROR: Nonces verification read failed! Expected %d bytes, read %d bytes\n", noncesSize, readBack);
+            continue; // Try again
+        }
+        
+        // Compare written and read data
+        if (memcmp(noncesBuffer, verifyBuffer, noncesSize) == 0) {
+            success = true;
+            preferences.putBool(hasNoncesKey, true);
+            Serial.printf(">>> ✓ Nonces verified: %d bytes saved correctly for Profile %d (attempt %d/%d)\n", 
+                noncesSize, active_profile_index, attempt, MAX_RETRIES);
+        } else {
+            Serial.printf(">>> ERROR: Nonces verification failed! Data mismatch on attempt %d/%d\n", attempt, MAX_RETRIES);
+        }
+    }
+    
     preferences.end();
-
-    Serial.printf(">>> Saved nonces (%d bytes) for Profile %d - DevNonce will persist across reboots\n", 
-        noncesSize, active_profile_index);
+    
+    if (!success) {
+        Serial.printf(">>> CRITICAL: Failed to save nonces after %d attempts! DevNonce may not persist!\n", MAX_RETRIES);
+    }
 }
 
 void LoRaWANHandler::loadSession() {
