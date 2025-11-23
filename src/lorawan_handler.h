@@ -61,6 +61,7 @@ public:
     // Session persistence (nonces only - session restore not working in RadioLib 7.4.0)
     void saveSession();
     void loadSession();
+    void resetNonces();  // Clear saved nonces to force fresh DevNonce sequence
 
     // Status getters
     uint32_t getUplinkCount() const;

@@ -67,6 +67,7 @@ private:
     static void handleSF6Update(HTTPRequest * req, HTTPResponse * res);
     static void handleSF6Reset(HTTPRequest * req, HTTPResponse * res);
     static void handleEnableAuth(HTTPRequest * req, HTTPResponse * res);
+    static void handleResetNonces(HTTPRequest * req, HTTPResponse * res);
     static void handleFactoryReset(HTTPRequest * req, HTTPResponse * res);
     static void handleReboot(HTTPRequest * req, HTTPResponse * res);
     static void handleRedirect(HTTPRequest * req, HTTPResponse * res);

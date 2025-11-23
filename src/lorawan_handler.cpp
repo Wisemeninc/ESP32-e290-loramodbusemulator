@@ -143,12 +143,33 @@ bool LoRaWANHandler::join() {
 
     Serial.println("LoRaWAN credentials configured");
 
-    // Attempt OTAA join
-    Serial.println("\nAttempting OTAA join...");
-    Serial.println("This may take 30-60 seconds...");
-    Serial.println("Waiting for join accept from network server...");
+    // Print diagnostic information before join attempt
+    Serial.println("\n========================================");
+    Serial.println("LoRaWAN Join Diagnostics");
+    Serial.println("========================================");
+    Serial.printf("Active Profile: %d (%s)\n", active_profile_index, profiles[active_profile_index].name);
+    Serial.printf("DevEUI: 0x%016llX\n", devEUI);
+    Serial.printf("JoinEUI: 0x%016llX\n", joinEUI);
+    Serial.printf("Region: EU868\n");
+    Serial.printf("TX Power: 14 dBm\n");
+    Serial.printf("Data Rate: DR5 (SF7BW125)\n");
+    Serial.println("========================================\n");
 
+    // Attempt OTAA join
+    Serial.println("Attempting OTAA join...");
+    Serial.println("Transmitting join request...");
+    unsigned long joinStart = millis();
+    
     int state = node->activateOTAA();
+    
+    unsigned long joinDuration = millis() - joinStart;
+    Serial.printf("Join attempt completed in %lu ms\n", joinDuration);
+
+    // Save nonces after EVERY join attempt (successful or failed)
+    // This keeps DevNonce synchronized even if device reboots after failed attempts
+    // Critical: Network server may see failed join attempts and increment its expected DevNonce
+    Serial.println("\nSaving DevNonce to NVS (keeps counter synchronized)...");
+    saveSession();
 
     // Check for successful join
     // -1118 = RADIOLIB_LORAWAN_NEW_SESSION (new join successful)
@@ -164,10 +185,6 @@ bool LoRaWANHandler::join() {
         Serial.println(node->getDevAddr(), HEX);
         joined = true;
 
-        // Save nonces immediately after successful join to persist DevNonce
-        Serial.println("\nSaving nonces to NVS for next boot...");
-        saveSession();
-
         return true;
     } else {
         Serial.print("\nJoin failed, code ");
@@ -176,11 +193,20 @@ bool LoRaWANHandler::join() {
         // Print helpful error messages
         if (state == RADIOLIB_ERR_NO_JOIN_ACCEPT) {  // -1116
             Serial.println("Error: No Join-Accept received (RADIOLIB_ERR_NO_JOIN_ACCEPT)");
-            Serial.println("  - Join request transmitted");
+            Serial.println("  - Join request transmitted successfully");
             Serial.println("  - No response received from network server");
-            Serial.println("  - Check: Device registered in network server");
-            Serial.println("  - Check: Gateway in range and online");
-            Serial.println("  - Check: Credentials (joinEUI, devEUI, appKey)");
+            Serial.println("\nPossible causes:");
+            Serial.println("  1. Device not registered in network server (TTN/Chirpstack)");
+            Serial.println("  2. Wrong credentials (DevEUI, JoinEUI, AppKey mismatch)");
+            Serial.println("  3. No gateway in range or gateway offline");
+            Serial.println("  4. Gateway not forwarding to correct network server");
+            Serial.println("  5. Network server having issues");
+            Serial.println("\nTroubleshooting:");
+            Serial.println("  - Verify device is registered with EXACT credentials above");
+            Serial.println("  - Check gateway coverage at your location");
+            Serial.println("  - Verify gateway is connected to network server");
+            Serial.println("  - Check network server console for join attempts");
+            Serial.println("  - Try moving closer to a known gateway");
         } else if (state == RADIOLIB_ERR_CHIP_NOT_FOUND) {
             Serial.println("Error: Radio communication lost (RADIOLIB_ERR_CHIP_NOT_FOUND)");
             Serial.println("  - SPI communication failure");
@@ -1298,6 +1324,35 @@ void LoRaWANHandler::loadSession() {
         preferences.end();
         Serial.println(">>> Cleared invalid session from NVS");
     }
+}
+
+void LoRaWANHandler::resetNonces() {
+    Serial.println("\n========================================");
+    Serial.println("Resetting LoRaWAN Nonces");
+    Serial.println("========================================");
+    
+    if (!preferences.begin("lorawan", false)) {
+        Serial.println("Error: Failed to open NVS for nonce reset");
+        return;
+    }
+    
+    // Clear nonces for all profiles
+    for (int i = 0; i < MAX_LORA_PROFILES; i++) {
+        char hasNoncesKey[16];
+        char noncesKey[16];
+        sprintf(hasNoncesKey, "has_nonces_%d", i);
+        sprintf(noncesKey, "nonces_%d", i);
+        
+        preferences.remove(hasNoncesKey);
+        preferences.remove(noncesKey);
+        Serial.printf("✓ Cleared nonces for Profile %d\n", i);
+    }
+    
+    preferences.end();
+    
+    Serial.println("✓ All nonces reset - DevNonce will start fresh on next join");
+    Serial.println("✓ This resolves nonce misalignment with network server");
+    Serial.println("========================================\n");
 }
 
 bool LoRaWANHandler::restoreNonces() {

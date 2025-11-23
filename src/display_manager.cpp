@@ -267,10 +267,23 @@ void DisplayManager::update(
 
     // Row 9: System info - scale 1
     drawText(3, 104, "Uptime:", 1);
-    drawNumber(45, 104, holding.uptime_seconds, 0, 1);
-    drawText(85, 104, "s  Heap:", 1);
-    drawNumber(130, 104, holding.free_heap_kb_low, 0, 1);
-    drawText(160, 104, "KB", 1);
+    // Format uptime intelligently based on duration
+    if (holding.uptime_seconds < 3600) {
+        // Less than 1 hour: show seconds
+        drawNumber(45, 104, holding.uptime_seconds, 0, 1);
+        drawText(85, 104, "s", 1);
+    } else if (holding.uptime_seconds < 86400) {
+        // Less than 1 day: show hours
+        drawNumber(45, 104, holding.uptime_seconds / 3600, 0, 1);
+        drawText(60, 104, "h", 1);
+    } else {
+        // 1 day or more: show days
+        drawNumber(45, 104, holding.uptime_seconds / 86400, 0, 1);
+        drawText(60, 104, "d", 1);
+    }
+    drawText(75, 104, "Heap:", 1);
+    drawNumber(112, 104, holding.free_heap_kb_low, 0, 1);
+    drawText(142, 104, "KB", 1);
 
     // Row 10: CPU/Temp/Version - scale 1
     drawText(3, 115, "CPU:", 1);

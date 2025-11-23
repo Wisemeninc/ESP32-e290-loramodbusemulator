@@ -4,10 +4,10 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 
 **Framework:** Arduino (via PlatformIO)
 **Platform:** Espressif32 (ESP32-S3)
-**Current Version:** v1.61
+**Current Version:** v1.63
 
 **Key Highlights:**
-- 🔧 **12 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
+- 🔧 **13 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
 - 🎯 **9 Input Registers** with realistic SF₆ gas sensor emulation
 - 📊 **Dynamic sensor simulation** with graph-friendly realistic drift and noise
 - 🌐 **WiFi configuration portal** with live register monitoring
@@ -28,10 +28,10 @@ https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Meshtasti
 
 ### Modbus RTU Features
 - **Modbus RTU Slave** with configurable address (1-247)
-- **Twelve Holding Registers (0-11):** System status and metrics
+- **Thirteen Holding Registers (0-12):** System status and metrics
   - Register 0: Sequential counter (increments on each access)
   - Register 1: Random number (updated every 5 seconds)
-  - Register 2: System uptime in seconds (low 16-bit)
+  - Registers 2-3: System uptime in seconds (32-bit, ~136 years max)
   - Register 3-4: Free heap memory in KB (32-bit value)
   - Register 5: Minimum free heap since boot (KB)
   - Register 6: CPU frequency (MHz)
@@ -548,21 +548,26 @@ The device supports two WiFi modes:
 |------------------|----------------|--------------------------------------------------|-------------|-------------|
 | 0                | Holding (16bit)| Sequential counter (increments on each access)   | Read/Write  | On access   |
 | 1                | Holding (16bit)| Random number (0-65535)                         | Read Only   | Every 5s    |
-| 2                | Holding (16bit)| Uptime in seconds (low 16-bit, wraps at 65535)  | Read Only   | Every 2s    |
-| 3                | Holding (16bit)| Free heap memory in KB (low word)               | Read Only   | Every 2s    |
-| 4                | Holding (16bit)| Free heap memory in KB (high word)              | Read Only   | Every 2s    |
-| 5                | Holding (16bit)| Minimum free heap since boot (KB)               | Read Only   | Every 2s    |
-| 6                | Holding (16bit)| CPU frequency in MHz                            | Read Only   | Every 2s    |
-| 7                | Holding (16bit)| Number of FreeRTOS tasks                        | Read Only   | Every 2s    |
-| 8                | Holding (16bit)| Chip temperature × 10 (e.g., 235 = 23.5°C)     | Read Only   | Every 2s    |
-| 9                | Holding (16bit)| Number of CPU cores                             | Read Only   | Static      |
-| 10               | Holding (16bit)| WiFi AP enabled (1=active, 0=disabled)          | Read Only   | On change   |
-| 11               | Holding (16bit)| Number of connected WiFi clients (0-4)          | Read Only   | On change   |
+| 2                | Holding (16bit)| Uptime in seconds (low word)                    | Read Only   | Every 2s    |
+| 3                | Holding (16bit)| Uptime in seconds (high word)                   | Read Only   | Every 2s    |
+| 4                | Holding (16bit)| Free heap memory in KB (low word)               | Read Only   | Every 2s    |
+| 5                | Holding (16bit)| Free heap memory in KB (high word)              | Read Only   | Every 2s    |
+| 6                | Holding (16bit)| Minimum free heap since boot (KB)               | Read Only   | Every 2s    |
+| 7                | Holding (16bit)| CPU frequency in MHz                            | Read Only   | Every 2s    |
+| 8                | Holding (16bit)| Number of FreeRTOS tasks                        | Read Only   | Every 2s    |
+| 9                | Holding (16bit)| Chip temperature × 10 (e.g., 235 = 23.5°C)     | Read Only   | Every 2s    |
+| 10               | Holding (16bit)| Number of CPU cores                             | Read Only   | Static      |
+| 11               | Holding (16bit)| WiFi AP enabled (1=active, 0=disabled)          | Read Only   | On change   |
+| 12               | Holding (16bit)| Number of connected WiFi clients (0-4)          | Read Only   | On change   |
 
 **Holding Register Notes:**
-- Registers 3-4 form a 32-bit value for total free heap. To get the actual value in KB:
+- Registers 2-3 form a 32-bit value for uptime in seconds (max ~136 years):
   ```
-  free_heap_kb = (register_4 << 16) | register_3
+  uptime_seconds = (register_3 << 16) | register_2
+  ```
+- Registers 4-5 form a 32-bit value for total free heap. To get the actual value in KB:
+  ```
+  free_heap_kb = (register_5 << 16) | register_4
   ```
 - Register 10 shows WiFi AP status: 1 when active (first 20 minutes after boot), 0 after timeout
 - Register 11 shows real-time count of connected WiFi clients (updates immediately on connect/disconnect)
@@ -707,17 +712,17 @@ client = ModbusSerialClient(
 
 client.connect()
 
-# Read all 12 holding registers
-result = client.read_holding_registers(address=0, count=12, unit=1)
+# Read all 13 holding registers
+result = client.read_holding_registers(address=0, count=13, unit=1)
 print("=== Holding Registers ===")
 print(f"Sequential Counter: {result.registers[0]}")
 print(f"Random Number: {result.registers[1]}")
-print(f"Uptime (seconds): {result.registers[2]}")
-print(f"Free Heap (KB): {(result.registers[4] << 16) | result.registers[3]}")
-print(f"CPU Frequency (MHz): {result.registers[6]}")
-print(f"Temperature (°C): {result.registers[8] / 10.0}")
-print(f"WiFi Enabled: {result.registers[10]}")
-print(f"WiFi Clients: {result.registers[11]}")
+print(f"Uptime (seconds): {(result.registers[3] << 16) | result.registers[2]}")
+print(f"Free Heap (KB): {(result.registers[5] << 16) | result.registers[4]}")
+print(f"CPU Frequency (MHz): {result.registers[7]}")
+print(f"Temperature (°C): {result.registers[9] / 10.0}")
+print(f"WiFi Enabled: {result.registers[11]}")
+print(f"WiFi Clients: {result.registers[12]}")
 
 # Read all 9 input registers (SF6 sensor data)
 result = client.read_input_registers(address=0, count=9, unit=1)

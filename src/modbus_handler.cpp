@@ -63,8 +63,8 @@ void ModbusHandler::begin(uint8_t slave_id) {
     input_regs.quartz_freq = 4000;  // 40.00 MHz (ESP32-S3 crystal frequency)
 
     // Set up callbacks
-    mb.onGetHreg(0, cbRead, 12);   // Holding regs 0-11
-    mb.onSetHreg(0, cbWrite, 12);  // Allow writes to holding regs
+    mb.onGetHreg(0, cbRead, 13);   // Holding regs 0-12 (uptime now uses 2 regs)
+    mb.onSetHreg(0, cbWrite, 13);  // Allow writes to holding regs
     mb.onGetIreg(0, cbRead, 9);    // Input regs 0-8
 
     Serial.printf("Modbus Slave ID: %d\n", this->slave_id);
@@ -159,16 +159,17 @@ uint16_t ModbusHandler::cbRead(TRegister* reg, uint16_t val) {
         switch (addr) {
             case 0: return instance->holding_regs.sequential_counter;
             case 1: return instance->holding_regs.random_number;
-            case 2: return instance->holding_regs.uptime_seconds;
-            case 3: return instance->holding_regs.free_heap_kb_low;
-            case 4: return instance->holding_regs.free_heap_kb_high;
-            case 5: return instance->holding_regs.min_heap_kb;
-            case 6: return instance->holding_regs.cpu_freq_mhz;
-            case 7: return instance->holding_regs.task_count;
-            case 8: return instance->holding_regs.temperature_x10;
-            case 9: return instance->holding_regs.cpu_cores;
-            case 10: return instance->holding_regs.wifi_enabled;
-            case 11: return instance->holding_regs.wifi_clients;
+            case 2: return (uint16_t)(instance->holding_regs.uptime_seconds & 0xFFFF);  // Low word
+            case 3: return (uint16_t)(instance->holding_regs.uptime_seconds >> 16);     // High word
+            case 4: return instance->holding_regs.free_heap_kb_low;
+            case 5: return instance->holding_regs.free_heap_kb_high;
+            case 6: return instance->holding_regs.min_heap_kb;
+            case 7: return instance->holding_regs.cpu_freq_mhz;
+            case 8: return instance->holding_regs.task_count;
+            case 9: return instance->holding_regs.temperature_x10;
+            case 10: return instance->holding_regs.cpu_cores;
+            case 11: return instance->holding_regs.wifi_enabled;
+            case 12: return instance->holding_regs.wifi_clients;
             default: return 0;
         }
     }

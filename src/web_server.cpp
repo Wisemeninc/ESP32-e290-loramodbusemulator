@@ -84,6 +84,7 @@ void WebServerManager::setupRoutes() {
     ResourceNode * nodeSF6Update = new ResourceNode("/sf6/update", "GET", &handleSF6Update);
     ResourceNode * nodeSF6Reset = new ResourceNode("/sf6/reset", "GET", &handleSF6Reset);
     ResourceNode * nodeEnableAuth = new ResourceNode("/security/enable", "GET", &handleEnableAuth);
+    ResourceNode * nodeResetNonces = new ResourceNode("/lorawan/reset-nonces", "GET", &handleResetNonces);
     ResourceNode * nodeFactoryReset = new ResourceNode("/factory-reset", "GET", &handleFactoryReset);
     ResourceNode * nodeReboot = new ResourceNode("/reboot", "GET", &handleReboot);
 
@@ -108,6 +109,7 @@ void WebServerManager::setupRoutes() {
     server->registerNode(nodeSF6Update);
     server->registerNode(nodeSF6Reset);
     server->registerNode(nodeEnableAuth);
+    server->registerNode(nodeResetNonces);
     server->registerNode(nodeFactoryReset);
     server->registerNode(nodeReboot);
     
@@ -323,22 +325,26 @@ void WebServerManager::handleRegisters(HTTPRequest * req, HTTPResponse * res) {
 
     // Holding Registers
     HoldingRegisters& holding = modbusHandler.getHoldingRegisters();
-    res->print("<h2>Holding Registers (0-11) - Read/Write</h2>");
+    res->print("<h2>Holding Registers (0-12) - Read/Write</h2>");
     res->print("<table><tr><th>Address</th><th>Value</th><th>Hex</th><th>Description</th></tr>");
     res->print("<tr><td>0</td><td class='value'>" + String(holding.sequential_counter) + "</td><td>0x" + String(holding.sequential_counter, HEX) + "</td><td>Sequential Counter</td></tr>");
     res->print("<tr><td>1</td><td class='value'>" + String(holding.random_number) + "</td><td>0x" + String(holding.random_number, HEX) + "</td><td>Random Number</td></tr>");
-    res->print("<tr><td>2</td><td class='value'>" + String(holding.uptime_seconds) + "</td><td>0x" + String(holding.uptime_seconds, HEX) + "</td><td>Uptime (seconds)</td></tr>");
+    
+    uint16_t uptime_low = (uint16_t)(holding.uptime_seconds & 0xFFFF);
+    uint16_t uptime_high = (uint16_t)(holding.uptime_seconds >> 16);
+    res->print("<tr><td>2</td><td class='value'>" + String(uptime_low) + "</td><td>0x" + String(uptime_low, HEX) + "</td><td>Uptime (low word)</td></tr>");
+    res->print("<tr><td>3</td><td class='value'>" + String(uptime_high) + "</td><td>0x" + String(uptime_high, HEX) + "</td><td>Uptime (high word) = <strong>" + String(holding.uptime_seconds) + " seconds</strong></td></tr>");
 
     uint32_t total_heap = ((uint32_t)holding.free_heap_kb_high << 16) | holding.free_heap_kb_low;
-    res->print("<tr><td>3</td><td class='value'>" + String(holding.free_heap_kb_low) + "</td><td>0x" + String(holding.free_heap_kb_low, HEX) + "</td><td>Free Heap (low word)</td></tr>");
-    res->print("<tr><td>4</td><td class='value'>" + String(holding.free_heap_kb_high) + "</td><td>0x" + String(holding.free_heap_kb_high, HEX) + "</td><td>Free Heap (high word) = <strong>" + String(total_heap) + " KB total</strong></td></tr>");
-    res->print("<tr><td>5</td><td class='value'>" + String(holding.min_heap_kb) + "</td><td>0x" + String(holding.min_heap_kb, HEX) + "</td><td>Min Free Heap (KB)</td></tr>");
-    res->print("<tr><td>6</td><td class='value'>" + String(holding.cpu_freq_mhz) + "</td><td>0x" + String(holding.cpu_freq_mhz, HEX) + "</td><td>CPU Frequency (MHz)</td></tr>");
-    res->print("<tr><td>7</td><td class='value'>" + String(holding.task_count) + "</td><td>0x" + String(holding.task_count, HEX) + "</td><td>FreeRTOS Tasks</td></tr>");
-    res->print("<tr><td>8</td><td class='value'>" + String(holding.temperature_x10) + "</td><td>0x" + String(holding.temperature_x10, HEX) + "</td><td>Temperature = <strong>" + String(holding.temperature_x10 / 10.0, 1) + " C</strong></td></tr>");
-    res->print("<tr><td>9</td><td class='value'>" + String(holding.cpu_cores) + "</td><td>0x" + String(holding.cpu_cores, HEX) + "</td><td>CPU Cores</td></tr>");
-    res->print("<tr><td>10</td><td class='value'>" + String(holding.wifi_enabled) + "</td><td>0x" + String(holding.wifi_enabled, HEX) + "</td><td>WiFi AP Enabled</td></tr>");
-    res->print("<tr><td>11</td><td class='value'>" + String(holding.wifi_clients) + "</td><td>0x" + String(holding.wifi_clients, HEX) + "</td><td>WiFi Clients</td></tr>");
+    res->print("<tr><td>4</td><td class='value'>" + String(holding.free_heap_kb_low) + "</td><td>0x" + String(holding.free_heap_kb_low, HEX) + "</td><td>Free Heap (low word)</td></tr>");
+    res->print("<tr><td>5</td><td class='value'>" + String(holding.free_heap_kb_high) + "</td><td>0x" + String(holding.free_heap_kb_high, HEX) + "</td><td>Free Heap (high word) = <strong>" + String(total_heap) + " KB total</strong></td></tr>");
+    res->print("<tr><td>6</td><td class='value'>" + String(holding.min_heap_kb) + "</td><td>0x" + String(holding.min_heap_kb, HEX) + "</td><td>Min Free Heap (KB)</td></tr>");
+    res->print("<tr><td>7</td><td class='value'>" + String(holding.cpu_freq_mhz) + "</td><td>0x" + String(holding.cpu_freq_mhz, HEX) + "</td><td>CPU Frequency (MHz)</td></tr>");
+    res->print("<tr><td>8</td><td class='value'>" + String(holding.task_count) + "</td><td>0x" + String(holding.task_count, HEX) + "</td><td>FreeRTOS Tasks</td></tr>");
+    res->print("<tr><td>9</td><td class='value'>" + String(holding.temperature_x10) + "</td><td>0x" + String(holding.temperature_x10, HEX) + "</td><td>Temperature = <strong>" + String(holding.temperature_x10 / 10.0, 1) + " C</strong></td></tr>");
+    res->print("<tr><td>10</td><td class='value'>" + String(holding.cpu_cores) + "</td><td>0x" + String(holding.cpu_cores, HEX) + "</td><td>CPU Cores</td></tr>");
+    res->print("<tr><td>11</td><td class='value'>" + String(holding.wifi_enabled) + "</td><td>0x" + String(holding.wifi_enabled, HEX) + "</td><td>WiFi AP Enabled</td></tr>");
+    res->print("<tr><td>12</td><td class='value'>" + String(holding.wifi_clients) + "</td><td>0x" + String(holding.wifi_clients, HEX) + "</td><td>WiFi Clients</td></tr>");
     res->print("</table>");
 
     // Input Registers
@@ -529,6 +535,26 @@ void WebServerManager::handleLoRaWAN(HTTPRequest * req, HTTPResponse * res) {
 
     res->print("<button type='submit'>Save & Restart</button>");
     res->print("</form>");
+
+    // DevNonce Reset Section
+    res->print("<h2>DevNonce Reset</h2>");
+    res->print("<div class='warning' style='background:#fff3cd;border-color:#ffc107;color:#856404;'>");
+    res->print("<strong>Troubleshooting:</strong> If you see join failures even with correct credentials, ");
+    res->print("the DevNonce counter may be misaligned with your network server.");
+    res->print("</div>");
+    res->print("<div class='card'>");
+    res->print("<p><strong>When to use this:</strong></p>");
+    res->print("<ul style='text-align:left;margin:10px 0;padding-left:20px;'>");
+    res->print("<li>Join attempts fail with error -1116 (RADIOLIB_ERR_NO_JOIN_ACCEPT)</li>");
+    res->print("<li>Network server shows 'MIC failed' or 'DevNonce too low' errors</li>");
+    res->print("<li>After flashing firmware multiple times during development</li>");
+    res->print("</ul>");
+    res->print("<p><strong>What this does:</strong> Clears the saved DevNonce counter so the device starts fresh on the next join attempt.</p>");
+    res->print("<p style='font-size:12px;color:#7f8c8d;'><strong>Note:</strong> You may also need to flush the OTAA device nonce in your network server (TTN Console → End Devices → General Settings → Reset DevNonce).</p>");
+    res->print("<button onclick='if(confirm(\"Reset DevNonce counter? This will clear the nonce misalignment.\")) window.location.href=\"/lorawan/reset-nonces\"' ");
+    res->print("style='background:#ffc107;color:#000;padding:10px 20px;border:none;border-radius:5px;font-size:14px;cursor:pointer;margin-top:10px;'>");
+    res->print("Reset DevNonce Counter</button>");
+    res->print("</div>");
 
     res->print(FPSTR(HTML_FOOTER));
 }
@@ -1162,6 +1188,20 @@ void WebServerManager::handleFactoryReset(HTTPRequest * req, HTTPResponse * res)
     delay(1000);
     ESP.restart();
 }
+void WebServerManager::handleResetNonces(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
+    Serial.println("\n>>> Web request: Reset LoRaWAN nonces");
+    lorawanHandler.resetNonces();
+    
+    instance->sendRedirect(res, "Reset Nonces", 
+        "LoRaWAN DevNonce counters have been reset.<br><br>"
+        "This clears the nonce misalignment with the network server.<br>"
+        "The device will start with a fresh DevNonce on the next join attempt.<br><br>"
+        "<strong>Note:</strong> You may also need to flush the OTAA device nonce in your network server (TTN/Chirpstack).", 
+        "/", 5);
+}
+
 void WebServerManager::handleReboot(HTTPRequest * req, HTTPResponse * res) {
     if (!authManager.checkAuthentication(req, res)) return;
     

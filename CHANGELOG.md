@@ -5,6 +5,46 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.63] - 2025-11-23
+
+### Changed
+- **Modbus Uptime Register**: Expanded from 16-bit to 32-bit to prevent overflow
+  - Previous: 16-bit uptime rolled over after 18.2 hours (65,535 seconds)
+  - Current: 32-bit uptime supports ~136 years (4,294,967,295 seconds)
+  - Uptime now spans registers 2-3 (low word/high word)
+  - All subsequent holding registers shifted by one (now at addresses 4-12)
+  - Total holding registers increased from 12 to 13
+
+### Improved
+- **Display Uptime Format**: Intelligent formatting based on duration
+  - Less than 1 hour: shows seconds (e.g., "3456s")
+  - 1 hour to 1 day: shows hours (e.g., "18h")
+  - 1 day or more: shows days (e.g., "45d")
+  - Optimizes display space while maintaining readability
+
+### Updated
+- **Documentation**: Updated README.md with corrected register addresses and 32-bit uptime examples
+- **Web Interface**: Updated register display to show 32-bit uptime value
+- **Python Examples**: Updated to read 13 registers and correctly combine 32-bit uptime
+
+## [1.62] - 2025-11-22
+
+### Added
+- **LoRaWAN DevNonce Reset**: Added functionality to reset DevNonce counters to resolve nonce misalignment
+  - New `resetNonces()` method clears saved DevNonce counters for all profiles
+  - Web interface endpoint `/lorawan/reset-nonces` (requires authentication)
+  - Reset button added to LoRaWAN configuration page with troubleshooting guidance
+  - Resolves persistent join failures caused by DevNonce counter mismatch with network server
+  - Useful when device nonce gets out of sync after development/testing cycles
+
+### Fixed
+- **CRITICAL: LoRaWAN DevNonce Synchronization**: Save DevNonce after EVERY join attempt, not just successful ones
+  - **Root cause**: Device only saved DevNonce after successful joins. If join attempts failed and device rebooted, DevNonce counter would reset to old value. Meanwhile, network server may have seen those failed attempts and incremented its expected DevNonce, causing persistent join failures.
+  - **Symptom**: Error -1116 (RADIOLIB_ERR_NO_JOIN_ACCEPT) during device operation, even with correct credentials and good signal
+  - **Solution**: Now saves DevNonce to NVS after every join attempt (successful or failed) to keep counter synchronized with network server
+  - **Impact**: Eliminates "DevNonce too low" rejections caused by counter misalignment during normal operation
+  - **Recovery**: Use new DevNonce reset function if device is already out of sync
+
 ## [1.61] - 2025-11-22
 
 ### Added

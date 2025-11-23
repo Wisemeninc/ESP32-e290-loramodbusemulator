@@ -11,7 +11,7 @@
 struct HoldingRegisters {
     uint16_t sequential_counter;
     uint16_t random_number;
-    uint16_t uptime_seconds;
+    uint32_t uptime_seconds;  // 32-bit for ~136 years (spans registers 2-3)
     uint16_t free_heap_kb_low;
     uint16_t free_heap_kb_high;
     uint16_t min_heap_kb;
