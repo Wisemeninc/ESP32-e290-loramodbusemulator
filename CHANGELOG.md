@@ -5,6 +5,16 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.65] - 2025-11-23
+
+### Improved
+- **Display Uptime Format**: Enhanced with multi-unit detail for better readability
+  - Under 1 hour: Shows minutes and seconds (e.g., "15m 30s")
+  - 1 hour to 1 day: Shows hours and minutes (e.g., "5h 23m")
+  - 1 day or more: Shows days, hours, and minutes (e.g., "3d 5h 23m")
+  - Heap display moved further right to accommodate additional detail
+  - More informative at a glance without taking up extra space
+
 ## [1.64] - 2025-11-23
 
 ### Added

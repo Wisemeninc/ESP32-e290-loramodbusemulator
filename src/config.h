@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 164  // v1.64 - UI: Added dark mode for web interface and E-Ink display
+#define FIRMWARE_VERSION 165  // v1.65 - Display: Enhanced uptime with days/hours/minutes detail
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION

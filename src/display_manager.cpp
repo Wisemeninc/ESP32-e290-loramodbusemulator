@@ -276,23 +276,38 @@ void DisplayManager::update(
 
     // Row 9: System info - scale 1
     drawText(3, 104, "Uptime:", 1);
-    // Format uptime intelligently based on duration
+    // Format uptime with more detail based on duration
     if (holding.uptime_seconds < 3600) {
-        // Less than 1 hour: show seconds
-        drawNumber(45, 104, holding.uptime_seconds, 0, 1);
-        drawText(70, 104, "s", 1);
+        // Less than 1 hour: show minutes and seconds
+        uint32_t mins = holding.uptime_seconds / 60;
+        uint32_t secs = holding.uptime_seconds % 60;
+        drawNumber(45, 104, mins, 0, 1);
+        drawText(58, 104, "m", 1);
+        drawNumber(70, 104, secs, 0, 1);
+        drawText(83, 104, "s", 1);
     } else if (holding.uptime_seconds < 86400) {
-        // Less than 1 day: show hours
-        drawNumber(45, 104, holding.uptime_seconds / 3600, 0, 1);
-        drawText(65, 104, "h", 1);
+        // Less than 1 day: show hours and minutes
+        uint32_t hours = holding.uptime_seconds / 3600;
+        uint32_t mins = (holding.uptime_seconds % 3600) / 60;
+        drawNumber(45, 104, hours, 0, 1);
+        drawText(58, 104, "h", 1);
+        drawNumber(70, 104, mins, 0, 1);
+        drawText(83, 104, "m", 1);
     } else {
-        // 1 day or more: show days
-        drawNumber(45, 104, holding.uptime_seconds / 86400, 0, 1);
-        drawText(70, 104, "d", 1);
+        // 1 day or more: show days, hours, and minutes
+        uint32_t days = holding.uptime_seconds / 86400;
+        uint32_t hours = (holding.uptime_seconds % 86400) / 3600;
+        uint32_t mins = (holding.uptime_seconds % 3600) / 60;
+        drawNumber(45, 104, days, 0, 1);
+        drawText(58, 104, "d", 1);
+        drawNumber(70, 104, hours, 0, 1);
+        drawText(83, 104, "h", 1);
+        drawNumber(95, 104, mins, 0, 1);
+        drawText(108, 104, "m", 1);
     }
-    drawText(80, 104, "Heap:", 1);
-    drawNumber(112, 104, holding.free_heap_kb_low, 0, 1);
-    drawText(142, 104, "KB", 1);
+    drawText(120, 104, "Heap:", 1);
+    drawNumber(155, 104, holding.free_heap_kb_low, 0, 1);
+    drawText(185, 104, "KB", 1);
 
     // Row 10: CPU/Temp/Version - scale 1
     drawText(3, 115, "CPU:", 1);
