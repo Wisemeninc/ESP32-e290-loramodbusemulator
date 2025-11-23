@@ -42,6 +42,9 @@ private:
     String readPostBody(HTTPRequest * req);
     bool getPostParameterFromBody(const String& body, const char* name, String& value);
     void sendRedirect(HTTPResponse * res, const char* title, const char* message, const char* url, int delay = 3);
+    void printHTMLHeader(HTTPResponse * res);
+    bool getDarkMode();
+    void setDarkMode(bool enabled);
     
     // Request Handlers
     static void handleRoot(HTTPRequest * req, HTTPResponse * res);
@@ -67,6 +70,7 @@ private:
     static void handleSF6Update(HTTPRequest * req, HTTPResponse * res);
     static void handleSF6Reset(HTTPRequest * req, HTTPResponse * res);
     static void handleEnableAuth(HTTPRequest * req, HTTPResponse * res);
+    static void handleDarkMode(HTTPRequest * req, HTTPResponse * res);
     static void handleResetNonces(HTTPRequest * req, HTTPResponse * res);
     static void handleFactoryReset(HTTPRequest * req, HTTPResponse * res);
     static void handleReboot(HTTPRequest * req, HTTPResponse * res);

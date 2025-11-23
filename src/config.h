@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 163  // v1.63 - Modbus: Expanded uptime to 32-bit (~136 years)
+#define FIRMWARE_VERSION 164  // v1.64 - UI: Added dark mode for web interface and E-Ink display
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
@@ -19,10 +19,19 @@
 #define MODE_PRODUCTION false
 
 // ============================================================================
+// WEB INTERFACE CONFIGURATION
+// ============================================================================
+// Dark mode: false = Light mode, true = Dark mode
+#define WEB_DARK_MODE true
+
+// ============================================================================
 // DISPLAY CONFIGURATION
 // ============================================================================
 // Display rotation: 0=Portrait, 1=Landscape, 2=Portrait inverted, 3=Landscape inverted
 #define DISPLAY_ROTATION 3
+
+// Display dark mode: false = White background/black text, true = Black background/white text
+#define DISPLAY_DARK_MODE true
 
 // ============================================================================
 // MODBUS CONFIGURATION

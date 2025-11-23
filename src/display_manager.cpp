@@ -3,6 +3,15 @@
 #include "lorawan_handler.h"  // For LoRaWANHandler
 #include <WiFi.h>
 
+// Dark mode color definitions
+#if DISPLAY_DARK_MODE
+    #define BG_COLOR BLACK
+    #define FG_COLOR WHITE
+#else
+    #define BG_COLOR WHITE
+    #define FG_COLOR BLACK
+#endif
+
 // Global instance
 DisplayManager displayManager;
 
@@ -76,7 +85,7 @@ void DisplayManager::begin(int rot) {
     // Clear any previous content immediately on boot (full refresh)
     Serial.println("Clearing display...");
     display.clear();
-    display.fillRect(0, 0, 296, 128, WHITE);
+    display.fillRect(0, 0, 296, 128, BG_COLOR);
     display.update();
     
     // Enable partial refresh mode (fast mode) to reduce flicker
@@ -95,11 +104,11 @@ void DisplayManager::begin(int rot) {
 void DisplayManager::showStartupScreen() {
     display.clear();
 
-    // White background (normal, not inverted)
-    display.fillRect(0, 0, 296, 128, WHITE);
+    // Fill background with configured color
+    display.fillRect(0, 0, 296, 128, BG_COLOR);
 
-    // Draw border (black)
-    display.drawRect(0, 0, 296, 128, BLACK);
+    // Draw border with foreground color
+    display.drawRect(0, 0, 296, 128, FG_COLOR);
 
     // Title
     drawText(60, 10, "Stationsdata", 2);
@@ -136,11 +145,11 @@ void DisplayManager::update(
 ) {
     display.clear();
 
-    // Fill background with white (normal display, not inverted)
-    display.fillRect(0, 0, 296, 128, WHITE);
+    // Fill background with configured color
+    display.fillRect(0, 0, 296, 128, BG_COLOR);
 
-    // Draw border (black on white)
-    display.drawRect(0, 0, 296, 128, BLACK);
+    // Draw border with foreground color
+    display.drawRect(0, 0, 296, 128, FG_COLOR);
 
     // WiFi status (top right corner) - scale 1
     drawText(130, 2, "W:", 1);
@@ -271,17 +280,17 @@ void DisplayManager::update(
     if (holding.uptime_seconds < 3600) {
         // Less than 1 hour: show seconds
         drawNumber(45, 104, holding.uptime_seconds, 0, 1);
-        drawText(85, 104, "s", 1);
+        drawText(70, 104, "s", 1);
     } else if (holding.uptime_seconds < 86400) {
         // Less than 1 day: show hours
         drawNumber(45, 104, holding.uptime_seconds / 3600, 0, 1);
-        drawText(60, 104, "h", 1);
+        drawText(65, 104, "h", 1);
     } else {
         // 1 day or more: show days
         drawNumber(45, 104, holding.uptime_seconds / 86400, 0, 1);
-        drawText(60, 104, "d", 1);
+        drawText(70, 104, "d", 1);
     }
-    drawText(75, 104, "Heap:", 1);
+    drawText(80, 104, "Heap:", 1);
     drawNumber(112, 104, holding.free_heap_kb_low, 0, 1);
     drawText(142, 104, "KB", 1);
 
@@ -330,7 +339,7 @@ void DisplayManager::showWiFiCredentials(const char* ssid, const char* password)
 
     // Title
     drawText(50, 5, "WiFi AP Credentials", 1);
-    display.drawLine(0, 17, 295, 17, BLACK);
+    display.drawLine(0, 17, 295, 17, FG_COLOR);
 
     // SSID
     drawText(5, 25, "SSID:", 1);
@@ -379,7 +388,7 @@ void DisplayManager::drawChar(int x, int y, char c, int scale) {
             for (int row = 0; row < 7; row++) {
                 if (line & (1 << row)) {
                     // Draw scaled pixel (scale x scale rectangle)
-                    display.fillRect(x + col * scale, y + row * scale, scale, scale, BLACK);
+                    display.fillRect(x + col * scale, y + row * scale, scale, scale, FG_COLOR);
                 }
             }
         }

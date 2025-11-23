@@ -5,6 +5,29 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.64] - 2025-11-23
+
+### Added
+- **Dark Mode Support**: Configurable dark mode for both web interface and E-Ink display
+  - `WEB_DARK_MODE` in config.h: true = dark theme, false = light theme
+  - `DISPLAY_DARK_MODE` in config.h: true = inverted display (white on black), false = normal (black on white)
+  - Web interface: Dark theme with dark backgrounds (#1a1a1a, #2d2d2d) and light text (#e0e0e0)
+  - Display: Inverted e-ink rendering in dark mode (white text on black background)
+  - Consistent dark/light theming across entire user interface
+  - Compile-time configuration via config.h (no runtime toggle)
+
+### Changed
+- **Web Interface**: Completely rewritten HTML header generation for dynamic theming
+  - Removed static HTML_HEADER constant from web_pages.h
+  - Added dynamic `printHTMLHeader()` method that generates theme-specific CSS
+  - Separate color schemes for light and dark modes
+  - All 7 web pages now use dynamic header generation
+
+### Improved
+- **Display Rendering**: Better contrast and readability in both light and dark modes
+  - Background and foreground colors now use BG_COLOR/FG_COLOR macros
+  - Consistent theming across startup screen, status display, and WiFi credentials
+
 ## [1.63] - 2025-11-23
 
 ### Changed

@@ -1,5 +1,7 @@
 #include "web_server.h"
 #include "web_pages.h"
+#include "config.h"
+#include <Preferences.h>
 
 // Global instance
 WebServerManager webServer;
@@ -84,6 +86,7 @@ void WebServerManager::setupRoutes() {
     ResourceNode * nodeSF6Update = new ResourceNode("/sf6/update", "GET", &handleSF6Update);
     ResourceNode * nodeSF6Reset = new ResourceNode("/sf6/reset", "GET", &handleSF6Reset);
     ResourceNode * nodeEnableAuth = new ResourceNode("/security/enable", "GET", &handleEnableAuth);
+    ResourceNode * nodeDarkMode = new ResourceNode("/darkmode", "GET", &handleDarkMode);
     ResourceNode * nodeResetNonces = new ResourceNode("/lorawan/reset-nonces", "GET", &handleResetNonces);
     ResourceNode * nodeFactoryReset = new ResourceNode("/factory-reset", "GET", &handleFactoryReset);
     ResourceNode * nodeReboot = new ResourceNode("/reboot", "GET", &handleReboot);
@@ -109,6 +112,7 @@ void WebServerManager::setupRoutes() {
     server->registerNode(nodeSF6Update);
     server->registerNode(nodeSF6Reset);
     server->registerNode(nodeEnableAuth);
+    server->registerNode(nodeDarkMode);
     server->registerNode(nodeResetNonces);
     server->registerNode(nodeFactoryReset);
     server->registerNode(nodeReboot);
@@ -183,6 +187,93 @@ void WebServerManager::sendRedirect(HTTPResponse * res, const char* title, const
     res->print(buffer);
 }
 
+bool WebServerManager::getDarkMode() {
+    return WEB_DARK_MODE;
+}
+
+void WebServerManager::setDarkMode(bool enabled) {
+    // Dark mode is now set via config.h only
+    (void)enabled;  // Unused parameter
+}
+
+void WebServerManager::printHTMLHeader(HTTPResponse * res) {
+    bool darkMode = getDarkMode();
+    
+    res->print("<!DOCTYPE html><html><head><title>Vision Master E290</title>");
+    res->print("<meta name='viewport' content='width=device-width, initial-scale=1'>");
+    res->print("<style>");
+    
+    if (darkMode) {
+        // Dark mode colors
+        res->print("body{font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:20px;background:#1a1a1a;color:#e0e0e0;}");
+        res->print(".container{max-width:900px;margin:0 auto;background:#2d2d2d;padding:30px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.5);}");
+        res->print("h1{color:#e0e0e0;margin-top:0;border-bottom:3px solid #3498db;padding-bottom:15px;}");
+        res->print("h2{color:#d0d0d0;}");
+        res->print(".card{background:#383838;padding:20px;margin:15px 0;border-radius:8px;border-left:4px solid #3498db;color:#e0e0e0;}");
+        res->print(".info-item{background:#383838;padding:15px;border-radius:5px;border:1px solid #555;}");
+        res->print(".info-label{font-size:12px;color:#aaa;text-transform:uppercase;margin-bottom:5px;}");
+        res->print(".info-value{font-size:24px;font-weight:bold;color:#e0e0e0;}");
+        res->print("form{background:#383838;padding:20px;border-radius:8px;margin:20px 0;}");
+        res->print("label{display:block;margin-bottom:8px;color:#e0e0e0;font-weight:600;}");
+        res->print("input[type=text],input[type=password],input[type=number],select{width:100%;padding:10px;border:2px solid #555;border-radius:5px;font-size:16px;box-sizing:border-box;margin-bottom:15px;background:#2d2d2d;color:#e0e0e0;}");
+        res->print("input[type=text]:focus,input[type=password]:focus,input[type=number]:focus,select:focus{border-color:#3498db;outline:none;}");
+        res->print("th{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:12px;text-align:left;font-weight:600;}");
+        res->print("td{border:1px solid #555;padding:10px;background:#383838;color:#e0e0e0;}");
+        res->print("tr:nth-child(even) td{background:#2d2d2d;}");
+        res->print("tr:hover td{background:#404040;}");
+        res->print(".value{font-weight:bold;color:#e0e0e0;}");
+        res->print(".warning{background:#3d3519;border:1px solid#ffc107;padding:15px;border-radius:5px;margin:20px 0;color:#ffca28;}");
+        res->print(".footer{text-align:center;margin-top:30px;color:#888;font-size:14px;}");
+    } else {
+        // Light mode colors (original)
+        res->print("body{font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:20px;background:#f5f5f5;}");
+        res->print(".container{max-width:900px;margin:0 auto;background:white;padding:30px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}");
+        res->print("h1{color:#2c3e50;margin-top:0;border-bottom:3px solid #3498db;padding-bottom:15px;}");
+        res->print("h2{color:#34495e;margin-top:30px;}");
+        res->print(".card{background:#ecf0f1;padding:20px;margin:15px 0;border-radius:8px;border-left:4px solid #3498db;}");
+        res->print(".info-item{background:#fff;padding:15px;border-radius:5px;border:1px solid #ddd;}");
+        res->print(".info-label{font-size:12px;color:#7f8c8d;text-transform:uppercase;margin-bottom:5px;}");
+        res->print(".info-value{font-size:24px;font-weight:bold;color:#2c3e50;}");
+        res->print("form{background:#ecf0f1;padding:20px;border-radius:8px;margin:20px 0;}");
+        res->print("label{display:block;margin-bottom:8px;color:#2c3e50;font-weight:600;}");
+        res->print("input[type=text],input[type=password],input[type=number],select{width:100%;padding:10px;border:2px solid #bdc3c7;border-radius:5px;font-size:16px;box-sizing:border-box;margin-bottom:15px;}");
+        res->print("input[type=text]:focus,input[type=password]:focus,input[type=number]:focus,select:focus{border-color:#3498db;outline:none;}");
+        res->print("th{background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);color:white;padding:12px;text-align:left;font-weight:600;}");
+        res->print("td{border:1px solid #e0e0e0;padding:10px;background:white;}");
+        res->print("tr:nth-child(even) td{background:#f8f9fa;}");
+        res->print("tr:hover td{background:#e3f2fd;}");
+        res->print(".value{font-weight:bold;color:#2c3e50;}");
+        res->print(".warning{background:#fff3cd;border:1px solid #ffc107;padding:15px;border-radius:5px;margin:20px 0;color:#856404;}");
+        res->print(".footer{text-align:center;margin-top:30px;color:#7f8c8d;font-size:14px;}");
+    }
+    
+    // Common styles (both modes)
+    res->print(".nav{background:#3498db;padding:15px;margin:-30px -30px 30px -30px;border-radius:10px 10px 0 0;display:flex;align-items:center;flex-wrap:wrap;}");
+    res->print(".nav a{color:white;text-decoration:none;padding:10px 20px;margin:0 5px;background:#2980b9;border-radius:5px;display:inline-block;}");
+    res->print(".nav a:hover{background:#21618c;}");
+    res->print(".nav .reboot{margin-left:auto;background:#e74c3c;}");
+    res->print(".nav .reboot:hover{background:#c0392b;}");
+    res->print(".info{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:15px;margin:20px 0;}");
+    res->print("input[type=submit],button{background:#27ae60;color:white;padding:12px 30px;border:none;border-radius:5px;font-size:16px;cursor:pointer;margin-top:10px;}");
+    res->print("input[type=submit]:hover,button:hover{background:#229954;}");
+    res->print("table{border-collapse:collapse;width:100%;margin:15px 0;box-shadow:0 2px 4px rgba(0,0,0,0.1);}");
+    res->print(".spinner{border:4px solid #f3f3f3;border-top:4px solid #3498db;border-radius:50%;width:40px;height:40px;animation:spin 1s linear infinite;display:inline-block;vertical-align:middle;}");
+    res->print("@keyframes spin{0%{transform:rotate(0deg)}100%{transform:rotate(360deg)}}");
+    res->print("</style></head><body><div class='container'>");
+    
+    // Navigation
+    res->print("<div class='nav'>");
+    res->print("<a href='/'>Home</a>");
+    res->print("<a href='/stats'>Statistics</a>");
+    res->print("<a href='/registers'>Registers</a>");
+    res->print("<a href='/lorawan'>LoRaWAN</a>");
+    res->print("<a href='/lorawan/profiles'>Profiles</a>");
+    res->print("<a href='/wifi'>WiFi</a>");
+    res->print("<a href='/security'>Security</a>");
+    res->print("<a href='/reboot' class='reboot' onclick='return confirm(\"Are you sure you want to reboot the device?\");'>Reboot</a>");
+    res->print("</div>");
+}
+
 // ============================================================================
 // HANDLERS
 // ============================================================================
@@ -192,7 +283,7 @@ void WebServerManager::handleRoot(HTTPRequest * req, HTTPResponse * res) {
 
     res->setStatusCode(200);
     res->setHeader("Content-Type", "text/html");
-    res->print(FPSTR(HTML_HEADER));
+    instance->printHTMLHeader(res);
     
     res->print("<h1>Vision Master E290</h1>");
     res->print("<div class='card'><strong>Status:</strong> System Running | <strong>Uptime:</strong> " + String(millis() / 1000) + " seconds</div>");
@@ -257,7 +348,7 @@ void WebServerManager::handleStats(HTTPRequest * req, HTTPResponse * res) {
 
     res->setStatusCode(200);
     res->setHeader("Content-Type", "text/html");
-    res->print(FPSTR(HTML_HEADER));
+    instance->printHTMLHeader(res);
     
     res->print("<h1>System Statistics</h1>");
     
@@ -287,7 +378,7 @@ void WebServerManager::handleRegisters(HTTPRequest * req, HTTPResponse * res) {
 
     res->setStatusCode(200);
     res->setHeader("Content-Type", "text/html");
-    res->print(FPSTR(HTML_HEADER));
+    instance->printHTMLHeader(res);
     
     // Add SF6 Control Panel Script
     res->print(R"(
@@ -424,7 +515,7 @@ void WebServerManager::handleLoRaWAN(HTTPRequest * req, HTTPResponse * res) {
 
     res->setStatusCode(200);
     res->setHeader("Content-Type", "text/html");
-    res->print(FPSTR(HTML_HEADER));
+    instance->printHTMLHeader(res);
 
     res->print("<h1>LoRaWAN Configuration</h1>");
     res->print("<p>Device credentials and network status for LoRaWAN OTAA. Copy credentials to your network server (TTN, ChirpStack, AWS IoT Core, etc.).</p>");
@@ -564,7 +655,7 @@ void WebServerManager::handleLoRaWANProfiles(HTTPRequest * req, HTTPResponse * r
 
     res->setStatusCode(200);
     res->setHeader("Content-Type", "text/html");
-    res->print(FPSTR(HTML_HEADER));
+    instance->printHTMLHeader(res);
     
     // Add scripts for profile management
     res->print(R"(
@@ -747,7 +838,7 @@ void WebServerManager::handleWiFi(HTTPRequest * req, HTTPResponse * res) {
 
     res->setStatusCode(200);
     res->setHeader("Content-Type", "text/html");
-    res->print(FPSTR(HTML_HEADER));
+    instance->printHTMLHeader(res);
     
     // Add scripts for WiFi scanning
     res->print(FPSTR(WIFI_PAGE_ASSETS));
@@ -788,7 +879,7 @@ void WebServerManager::handleSecurity(HTTPRequest * req, HTTPResponse * res) {
 
     res->setStatusCode(200);
     res->setHeader("Content-Type", "text/html");
-    res->print(FPSTR(HTML_HEADER));
+    instance->printHTMLHeader(res);
     
     // Add styles for checkboxes
     res->print(R"(
@@ -1172,6 +1263,13 @@ void WebServerManager::handleEnableAuth(HTTPRequest * req, HTTPResponse * res) {
     authManager.save();
     instance->sendRedirect(res, "Auth Enabled", "Authentication enabled.", "/security");
 }
+
+void WebServerManager::handleDarkMode(HTTPRequest * req, HTTPResponse * res) {
+    // Dark mode is now configured via config.h only, redirect to home
+    res->setStatusCode(302);
+    res->setHeader("Location", "/");
+}
+
 void WebServerManager::handleFactoryReset(HTTPRequest * req, HTTPResponse * res) {
     if (!authManager.checkAuthentication(req, res)) return;
     

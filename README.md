@@ -4,7 +4,7 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 
 **Framework:** Arduino (via PlatformIO)
 **Platform:** Espressif32 (ESP32-S3)
-**Current Version:** v1.63
+**Current Version:** v1.64
 
 **Key Highlights:**
 - 🔧 **13 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
