@@ -69,10 +69,10 @@ enum PayloadType {
 // Payload type names for display
 const char* const PAYLOAD_TYPE_NAMES[] = {
     "Adeunis Modbus SF6",
+    "Vistron Lora Mod Con",
     "Cayenne LPP",
     "Raw Modbus Registers",
-    "Custom",
-    "Vistron Lora Mod Con"
+    "Custom"
 };
 
 // LoRaWAN Profile Structure

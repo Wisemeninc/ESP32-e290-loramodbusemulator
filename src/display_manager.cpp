@@ -111,7 +111,7 @@ void DisplayManager::showStartupScreen() {
     display.drawRect(0, 0, 296, 128, FG_COLOR);
 
     // Title
-    drawText(60, 10, "Stationsdata", 2);
+    drawText(10, 10, "Powered by Stationsdata", 2);
     
     // Subtitle
     drawText(40, 40, "SF6 Modbus Gateway", 1);
