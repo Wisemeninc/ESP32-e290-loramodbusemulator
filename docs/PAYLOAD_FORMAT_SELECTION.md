@@ -7,7 +7,7 @@
 
 Each LoRaWAN profile can now use a different payload format, allowing more flexible device emulation scenarios where different virtual devices send different data structures.
 
-## Available Payload Formats
+## Available Payload Formats (5 Total)
 
 ### 1. Adeunis Modbus SF6 (Default)
 **Size:** 10 bytes fixed  
@@ -105,6 +105,22 @@ Byte 1-4:  Temperature (float, °C, little-endian)
 Byte 5-8:  Pressure (float, bar, little-endian)
 Byte 9-12: Density (float, kg/m³, little-endian)
 ```
+
+### 5. Vistron Lora Mod Con Format
+**Size:** 16 bytes fixed  
+**Use Case:** Extended format with error tracking and uplink counter
+
+**Structure:**
+```
+Byte 0-3:   Uplink Counter (uint32_t)
+Byte 4-7:   Error Count (uint32_t)
+Byte 8-9:   SF6 Density (×100, uint16_t) - kg/m³
+Byte 10-11: SF6 Pressure @20°C (×10, uint16_t) - kPa
+Byte 12-13: SF6 Temperature (×10, uint16_t) - K
+Byte 14-15: SF6 Absolute Pressure (×10, uint16_t) - kPa
+```
+
+**Note:** See [VISTRON_LORA_MOD_CON_FORMAT.md](VISTRON_LORA_MOD_CON_FORMAT.md) for complete decoder implementation.
 
 **Example Decoder (JavaScript):**
 ```javascript

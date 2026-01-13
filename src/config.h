@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 168  // v1.67 - OTA firmware updates from private GitHub repo
+#define FIRMWARE_VERSION 168  // v1.68 - OTA firmware updates from private GitHub repo
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
@@ -69,10 +69,10 @@ enum PayloadType {
 // Payload type names for display
 const char* const PAYLOAD_TYPE_NAMES[] = {
     "Adeunis Modbus SF6",
-    "Vistron Lora Mod Con",
     "Cayenne LPP",
     "Raw Modbus Registers",
-    "Custom"
+    "Custom",
+    "Vistron Lora Mod Con"
 };
 
 // LoRaWAN Profile Structure

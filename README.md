@@ -4,7 +4,7 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 
 **Framework:** Arduino (via PlatformIO)
 **Platform:** Espressif32 (ESP32-S3)
-**Current Version:** v1.65
+**Current Version:** v1.68
 
 **Key Highlights:**
 - 🔧 **13 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
@@ -69,8 +69,11 @@ https://www.amazon.de/-/en/ESP32-S3R8-Development-Compatible-Micpython-Meshtasti
 - **Periodic transmission** of Modbus register data
 - **RadioLib integration** with SX1262 transceiver (v7.4.0+)
 - **Region support:** EU868 (configurable)
-- **Two payload formats:**
+- **Five payload formats:**
   - Adeunis Modbus SF6 (10 bytes)
+  - Cayenne LPP (variable length)
+  - Raw Modbus Registers (10 bytes)
+  - Custom (13 bytes)
   - Vistron Lora Mod Con (16 bytes)
 - **Session persistence** with NVS storage
 - **Uplink and downlink** handling with MAC command support
@@ -295,6 +298,36 @@ Edit `src/config.h`:
 // Change to 1 minute (60000) or 10 minutes (600000) as needed
 ```
 
+## OTA Firmware Updates
+
+The device supports Over-The-Air (OTA) firmware updates from the private GitHub repository:
+
+### Features
+- **Automatic Update Checking**: Compare current firmware version with latest GitHub releases
+- **Secure Downloads**: Uses GitHub Personal Access Token for private repository access
+- **Progress Tracking**: Real-time download and installation progress display
+- **Version Verification**: Semantic version comparison (vX.YY format)
+- **Safe Updates**: Verification and rollback protection
+
+### Configuration
+
+1. **GitHub Token**: Configure in `src/config.h`:
+   ```cpp
+   #define GITHUB_PAT "ghp_your_token_here"
+   #define GITHUB_PAT_PREFER_HARDCODED true
+   ```
+
+2. **Token Permissions**: GitHub PAT requires `repo` scope for private repository access
+
+3. **Release Format**: GitHub releases must include a compiled `firmware.bin` file as an asset
+
+### Usage
+
+1. Navigate to **Update** tab in web interface
+2. Click **Check for Updates** to compare versions
+3. Click **Start Update** if newer version available
+4. Monitor progress and wait for automatic reboot
+
 ### SX1262 Pin Configuration
 
 The Vision Master E290 uses these GPIO pins for the SX1262 LoRa module:
@@ -497,18 +530,32 @@ The web interface is organized into multiple tabs with HTTP Basic Authentication
    - DevEUI, AppEUI, and AppKey management
    - Join status and transmission statistics
 
-5. **WiFi Tab:**
+5. **LoRaWAN Profiles Tab:**
+   - Manage up to 4 LoRaWAN profiles with auto-rotation
+   - Per-profile payload format selection (5 formats available)
+   - Enable/disable individual profiles
+   - Activate specific profiles for immediate use
+
+6. **WiFi Tab:**
    - Connect to existing WiFi network (client mode)
    - Scan for available networks
    - View connection status and IP address
    - AP mode automatically disabled when connected as client
    - Access device via https://stationsdata.local after connecting
 
-6. **Security Tab:**
+7. **Security Tab:**
    - Change web interface username and password
    - Enable/disable HTTP Basic Authentication
    - Credentials stored securely in NVS
    - Default credentials: username `admin`, password `admin`
+
+8. **Update Tab:**
+   - OTA firmware updates from GitHub repository
+   - Check for newer versions automatically
+   - Download and install updates with progress tracking
+   - GitHub token configuration for private repository access
+
+**Note:** Historical security code reviews have been moved to the `/archive` folder for reference.
 
 **WiFi Modes:**
 

@@ -249,6 +249,10 @@ Use one physical device to emulate up to 4 different LoRa devices for developmen
 - Review serial console during boot for NVS errors
 
 ## Version History
+- **v1.68** - Current version
+  - Fixed PAYLOAD_TYPE_NAMES array order bug
+  - Documentation updates
+  - OTA firmware update feature added
 - **v1.47** - Initial multi-profile implementation
   - 4 profiles supported
   - Web UI for profile management

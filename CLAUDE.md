@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an ESP-IDF project for the **Heltec Vision Master E290** (ESP32-S3R8) that implements a Modbus RTU/TCP slave device with:
+This is an **Arduino framework project** for the **Heltec Vision Master E290** (ESP32-S3R8) that implements a Modbus RTU/TCP slave device with:
 - **Modbus RTU** communication via RS485 (HW-519 module)
 - **Modbus TCP** communication via WiFi (configurable, disabled by default)
 - 2.9" E-Ink display (296×128 pixels)
@@ -86,15 +86,24 @@ platformio run -e vision-master-e290-arduino -t clean
 
 ```
 src/
-└── main.cpp            - Entire application (Modbus slave, WiFi, HTTPS server,
-                          LoRaWAN framework, E-Ink display, SF6 emulation)
+├── main.cpp              # Application entry point
+├── config.h              # Configuration constants and definitions
+├── modbus_handler.cpp/h  # Modbus RTU slave implementation
+├── sf6_emulator.cpp/h    # SF₆ sensor simulation
+├── lorawan_handler.cpp/h # LoRaWAN OTAA implementation
+├── ota_manager.cpp/h     # OTA firmware updates from GitHub
+├── display_manager.cpp/h # E-Ink display control
+├── wifi_manager.cpp/h    # WiFi configuration and management
+├── auth_manager.cpp/h    # Web authentication
+├── web_server.cpp/h      # HTTPS web interface
+└── web_pages.h           # HTML templates and assets
 ```
 
-**Note:** The project was converted to Arduino framework. All functionality is now in a single `main.cpp` file using Arduino libraries.
+**Note:** The project uses Arduino framework with modular C++ classes for each major component.
 
 ### Key Data Structures
 
-**Holding Registers (12 registers, address 0-11):**
+**Holding Registers (13 registers, address 0-12):**
 ```c
 typedef struct {
     uint16_t sequential_counter;    // R/W, increments on access
@@ -170,7 +179,7 @@ The firmware runs multiple FreeRTOS tasks:
 - SSID: `ESP32-Modbus-Config`, Password: `modbus123`
 - Web UI at http://192.168.4.1
 - **Authentication required:** Default credentials are admin/admin
-- Six tabs: Statistics, Registers, Configuration, LoRaWAN, WiFi, Security
+- Eight tabs: Home, Statistics, Registers, LoRaWAN, Profiles, WiFi, Security, Update
 - Settings saved to NVS (non-volatile storage)
 - Uses Arduino WebServer library
 - WiFi client mode: Can connect to existing network, disables AP when connected
@@ -209,6 +218,15 @@ The firmware runs multiple FreeRTOS tasks:
 - Byte 0: Message type (0x03 = both register types)
 - Bytes 1-10: Holding register subset (counter, uptime, heap, temp, WiFi)
 - Bytes 11-18: Input register subset (SF₆ data)
+
+### OTA Manager
+
+- **GitHub Integration**: Downloads firmware from private GitHub repository
+- **Version Comparison**: Semantic versioning (vX.YY) with automatic update checking  
+- **Secure Authentication**: GitHub Personal Access Token (PAT) with repo scope
+- **Progress Tracking**: Real-time download and installation progress
+- **Web Interface**: Complete OTA management via /ota endpoint
+- **Safe Updates**: Firmware verification and rollback protection
 
 ### SF6 Manual Control System
 
