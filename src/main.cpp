@@ -26,6 +26,7 @@
 #include "lorawan_handler.h"
 #include "sf6_emulator.h"
 #include "web_server.h"
+#include "ota_manager.h"
 
 // ============================================================================
 // GLOBAL OBJECTS
@@ -75,6 +76,9 @@ void setup() {
 
     // Initialize Web Server
     webServer.begin();
+
+    // Initialize OTA Manager
+    otaManager.begin();
 
     // Initialize Modbus RTU
     // Get slave ID from preferences or default

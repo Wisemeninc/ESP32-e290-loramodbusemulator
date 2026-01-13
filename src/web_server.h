@@ -13,6 +13,7 @@
 #include "modbus_handler.h"
 #include "lorawan_handler.h"
 #include "sf6_emulator.h"
+#include "ota_manager.h"
 #include "web_pages.h"
 
 using namespace httpsserver;
@@ -75,6 +76,13 @@ private:
     static void handleFactoryReset(HTTPRequest * req, HTTPResponse * res);
     static void handleReboot(HTTPRequest * req, HTTPResponse * res);
     static void handleRedirect(HTTPRequest * req, HTTPResponse * res);
+    
+    // OTA Update Handlers
+    static void handleOTA(HTTPRequest * req, HTTPResponse * res);
+    static void handleOTAConfig(HTTPRequest * req, HTTPResponse * res);
+    static void handleOTACheck(HTTPRequest * req, HTTPResponse * res);
+    static void handleOTAStart(HTTPRequest * req, HTTPResponse * res);
+    static void handleOTAStatus(HTTPRequest * req, HTTPResponse * res);
 };
 
 // Global instance

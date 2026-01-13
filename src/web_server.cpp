@@ -90,6 +90,13 @@ void WebServerManager::setupRoutes() {
     ResourceNode * nodeResetNonces = new ResourceNode("/lorawan/reset-nonces", "GET", &handleResetNonces);
     ResourceNode * nodeFactoryReset = new ResourceNode("/factory-reset", "GET", &handleFactoryReset);
     ResourceNode * nodeReboot = new ResourceNode("/reboot", "GET", &handleReboot);
+    
+    // OTA Update routes
+    ResourceNode * nodeOTA = new ResourceNode("/ota", "GET", &handleOTA);
+    ResourceNode * nodeOTAConfig = new ResourceNode("/ota/config", "POST", &handleOTAConfig);
+    ResourceNode * nodeOTACheck = new ResourceNode("/ota/check", "GET", &handleOTACheck);
+    ResourceNode * nodeOTAStart = new ResourceNode("/ota/start", "GET", &handleOTAStart);
+    ResourceNode * nodeOTAStatus = new ResourceNode("/ota/status", "GET", &handleOTAStatus);
 
     server->registerNode(nodeRoot);
     server->registerNode(nodeStats);
@@ -116,6 +123,11 @@ void WebServerManager::setupRoutes() {
     server->registerNode(nodeResetNonces);
     server->registerNode(nodeFactoryReset);
     server->registerNode(nodeReboot);
+    server->registerNode(nodeOTA);
+    server->registerNode(nodeOTAConfig);
+    server->registerNode(nodeOTACheck);
+    server->registerNode(nodeOTAStart);
+    server->registerNode(nodeOTAStatus);
     
     // Redirect server routes
     ResourceNode * nodeRedirect = new ResourceNode("/*", "GET", &handleRedirect);
@@ -270,6 +282,7 @@ void WebServerManager::printHTMLHeader(HTTPResponse * res) {
     res->print("<a href='/lorawan/profiles'>Profiles</a>");
     res->print("<a href='/wifi'>WiFi</a>");
     res->print("<a href='/security'>Security</a>");
+    res->print("<a href='/ota'>Update</a>");
     res->print("<a href='/reboot' class='reboot' onclick='return confirm(\"Are you sure you want to reboot the device?\");'>Reboot</a>");
     res->print("</div>");
 }
@@ -1306,4 +1319,227 @@ void WebServerManager::handleReboot(HTTPRequest * req, HTTPResponse * res) {
     instance->sendRedirect(res, "Rebooting", "Device is restarting...", "/", 10);
     delay(1000);
     ESP.restart();
+}
+
+// ============================================================================
+// OTA UPDATE HANDLERS
+// ============================================================================
+
+void WebServerManager::handleOTA(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+
+    res->setStatusCode(200);
+    res->setHeader("Content-Type", "text/html");
+    instance->printHTMLHeader(res);
+    
+    // Add OTA JavaScript - using regular strings to avoid preprocessor issues
+    res->print("<script>");
+    res->print("let checkInterval=null;");
+    res->print("function checkForUpdates(){");
+    res->print("document.getElementById('checkBtn').disabled=true;");
+    res->print("document.getElementById('checkBtn').innerHTML='Checking...';");
+    res->print("document.getElementById('updateStatus').innerHTML='<div class=\"status checking\">Checking for updates...</div>';");
+    res->print("fetch('/ota/check').then(r=>r.json()).then(data=>{");
+    res->print("document.getElementById('checkBtn').disabled=false;");
+    res->print("document.getElementById('checkBtn').innerHTML='Check for Updates';");
+    res->print("if(data.error){document.getElementById('updateStatus').innerHTML='<div class=\"status error\">'+data.error+'</div>';}");
+    res->print("else if(data.updateAvailable){document.getElementById('updateStatus').innerHTML='<div class=\"status available\">Update available!<br><strong>Current:</strong> '+data.currentVersion+'<br><strong>Latest:</strong> '+data.latestVersion+'</div><button onclick=\"startUpdate()\" class=\"update-btn\">Install Update</button>';}");
+    res->print("else{document.getElementById('updateStatus').innerHTML='<div class=\"status uptodate\">You are running the latest version<br><strong>Version:</strong> '+data.currentVersion+'</div>';}");
+    res->print("}).catch(e=>{document.getElementById('checkBtn').disabled=false;document.getElementById('checkBtn').innerHTML='Check for Updates';document.getElementById('updateStatus').innerHTML='<div class=\"status error\">Failed to check</div>';});");
+    res->print("}");
+    res->print("function startUpdate(){");
+    res->print("if(!confirm('Start firmware update? Device will restart after update.'))return;");
+    res->print("document.getElementById('updateStatus').innerHTML='<div class=\"status updating\">Starting update...</div><div id=\"progressContainer\" style=\"margin-top:15px;\"><div class=\"progress-bar\"><div id=\"progressBar\" class=\"progress-fill\"></div></div><div id=\"progressText\">0%</div></div>';");
+    res->print("fetch('/ota/start').then(r=>r.json()).then(data=>{");
+    res->print("if(data.started){checkInterval=setInterval(checkProgress,1000);}");
+    res->print("else{document.getElementById('updateStatus').innerHTML='<div class=\"status error\">'+(data.error||'Failed')+'</div>';}");
+    res->print("}).catch(e=>{document.getElementById('updateStatus').innerHTML='<div class=\"status error\">Failed to start</div>';});");
+    res->print("}");
+    res->print("function checkProgress(){");
+    res->print("fetch('/ota/status').then(r=>r.json()).then(data=>{");
+    res->print("document.getElementById('progressBar').style.width=data.progress+'%';");
+    res->print("document.getElementById('progressText').textContent=data.progress+'% - '+data.message;");
+    res->print("if(data.status==='success'){clearInterval(checkInterval);document.getElementById('updateStatus').innerHTML='<div class=\"status success\">Update complete! Rebooting...</div>';setTimeout(()=>{location.reload();},15000);}");
+    res->print("else if(data.status==='failed'){clearInterval(checkInterval);document.getElementById('updateStatus').innerHTML='<div class=\"status error\">Failed: '+data.message+'</div>';}");
+    res->print("}).catch(e=>{});");
+    res->print("}");
+    res->print("function saveToken(){");
+    res->print("const token=document.getElementById('ghToken').value;");
+    res->print("if(!token){alert('Please enter a token');return;}");
+    res->print("fetch('/ota/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'token='+encodeURIComponent(token)})");
+    res->print(".then(r=>r.json()).then(data=>{if(data.success){alert('Token saved!');location.reload();}else{alert('Failed: '+(data.error||'Unknown'));}}).catch(e=>{alert('Failed');});");
+    res->print("}");
+    res->print("</script>");
+    
+    // CSS styles
+    res->print("<style>");
+    res->print(".status{padding:15px;margin:15px 0;border-radius:8px;text-align:center;}");
+    res->print(".status.checking{background:#e3f2fd;border:1px solid #2196f3;color:#1565c0;}");
+    res->print(".status.available{background:#e8f5e9;border:1px solid #4caf50;color:#2e7d32;}");
+    res->print(".status.uptodate{background:#f5f5f5;border:1px solid #9e9e9e;color:#616161;}");
+    res->print(".status.updating{background:#fff3e0;border:1px solid #ff9800;color:#e65100;}");
+    res->print(".status.success{background:#e8f5e9;border:1px solid #4caf50;color:#2e7d32;}");
+    res->print(".status.error{background:#ffebee;border:1px solid #f44336;color:#c62828;}");
+    res->print(".update-btn{background:#4caf50;color:white;padding:15px 30px;border:none;border-radius:8px;font-size:18px;cursor:pointer;margin-top:15px;}");
+    res->print(".update-btn:hover{background:#43a047;}");
+    res->print(".progress-bar{background:#e0e0e0;border-radius:10px;height:20px;overflow:hidden;margin:10px 0;}");
+    res->print(".progress-fill{background:linear-gradient(90deg,#4caf50,#8bc34a);height:100%;width:0%;transition:width 0.3s;}");
+    res->print(".token-masked{font-family:monospace;background:#f5f5f5;padding:5px 10px;border-radius:4px;}");
+    res->print("</style>");
+
+    res->print("<h1>Firmware Update (OTA)</h1>");
+    res->print("<p>Update device firmware over-the-air from the GitHub repository.</p>");
+
+    // Current version info
+    res->print("<div class='card'>");
+    res->print("<h3>Current Firmware</h3>");
+    res->print("<p><strong>Version:</strong> " + otaManager.getCurrentVersion() + "</p>");
+    res->print("<p><strong>Repository:</strong> <a href='https://github.com/" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "' target='_blank'>" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "</a></p>");
+    res->print("</div>");
+
+    // GitHub Token Configuration
+    res->print("<div class='card'>");
+    res->print("<h3>GitHub Authentication</h3>");
+    
+    if (otaManager.hasToken()) {
+        String token = otaManager.getGitHubToken();
+        String maskedToken = token.substring(0, 4) + "..." + token.substring(token.length() - 4);
+        res->print("<p>Token configured: <span class='token-masked'>" + maskedToken + "</span></p>");
+        res->print("<p style='font-size:12px;color:#7f8c8d;'>Enter a new token below to replace.</p>");
+    } else {
+        res->print("<div class='warning'>");
+        res->print("<strong>GitHub Token Required</strong><br>");
+        res->print("A Personal Access Token (PAT) is required to download firmware from the private repository.");
+        res->print("</div>");
+    }
+    
+    res->print("<p style='margin-top:15px;'><strong>How to create a GitHub token:</strong></p>");
+    res->print("<ol style='text-align:left;margin:10px 0;padding-left:20px;font-size:14px;'>");
+    res->print("<li>Go to GitHub Settings - Developer settings - Personal access tokens - Tokens (classic)</li>");
+    res->print("<li>Click 'Generate new token (classic)'</li>");
+    res->print("<li>Give it a name (e.g., 'ESP32-OTA')</li>");
+    res->print("<li>Select scope: <code>repo</code> (Full control of private repositories)</li>");
+    res->print("<li>Click 'Generate token' and copy it</li>");
+    res->print("</ol>");
+    
+    res->print("<div style='margin-top:15px;'>");
+    res->print("<label>GitHub Personal Access Token:</label>");
+    res->print("<input type='password' id='ghToken' placeholder='ghp_xxxxxxxxxxxx' style='margin-bottom:10px;'>");
+    res->print("<button onclick='saveToken()'>Save Token</button>");
+    res->print("</div>");
+    res->print("</div>");
+
+    // Update Check Section
+    res->print("<div class='card'>");
+    res->print("<h3>Check for Updates</h3>");
+    
+    if (!otaManager.hasToken()) {
+        res->print("<p style='color:#e74c3c;'>Configure a GitHub token above to check for updates.</p>");
+        res->print("<button disabled style='opacity:0.5;'>Check for Updates</button>");
+    } else {
+        res->print("<button id='checkBtn' onclick='checkForUpdates()'>Check for Updates</button>");
+        res->print("<div id='updateStatus'></div>");
+    }
+    res->print("</div>");
+
+    // Instructions
+    res->print("<div class='card'>");
+    res->print("<h3>How OTA Updates Work</h3>");
+    res->print("<ol style='text-align:left;margin:10px 0;padding-left:20px;'>");
+    res->print("<li>The device checks for the latest release on GitHub</li>");
+    res->print("<li>If a new version is found, it downloads the firmware.bin file</li>");
+    res->print("<li>The firmware is verified and installed</li>");
+    res->print("<li>The device automatically reboots with the new firmware</li>");
+    res->print("</ol>");
+    res->print("<p style='font-size:12px;color:#7f8c8d;'><strong>Note:</strong> Create a Release on GitHub and attach a compiled firmware.bin file as an asset.</p>");
+    res->print("</div>");
+
+    res->print(FPSTR(HTML_FOOTER));
+}
+
+void WebServerManager::handleOTAConfig(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
+    String body = instance->readPostBody(req);
+    String token;
+    
+    res->setHeader("Content-Type", "application/json");
+    
+    if (instance->getPostParameterFromBody(body, "token", token) && token.length() > 0) {
+        otaManager.setGitHubToken(token.c_str());
+        res->print("{\"success\":true}");
+    } else {
+        res->print("{\"success\":false,\"error\":\"No token provided\"}");
+    }
+}
+
+void WebServerManager::handleOTACheck(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
+    res->setHeader("Content-Type", "application/json");
+    
+    if (!otaManager.hasToken()) {
+        res->print("{\"error\":\"GitHub token not configured\"}");
+        return;
+    }
+    
+    otaManager.checkForUpdate();
+    OTAResult status = otaManager.getStatus();
+    
+    String json = "{";
+    json += "\"updateAvailable\":" + String(status.updateAvailable ? "true" : "false") + ",";
+    json += "\"currentVersion\":\"" + status.currentVersion + "\",";
+    json += "\"latestVersion\":\"" + status.latestVersion + "\",";
+    json += "\"message\":\"" + status.message + "\"";
+    json += "}";
+    
+    res->print(json);
+}
+
+void WebServerManager::handleOTAStart(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
+    res->setHeader("Content-Type", "application/json");
+    
+    if (!otaManager.hasToken()) {
+        res->print("{\"started\":false,\"error\":\"GitHub token not configured\"}");
+        return;
+    }
+    
+    if (otaManager.isUpdating()) {
+        res->print("{\"started\":false,\"error\":\"Update already in progress\"}");
+        return;
+    }
+    
+    otaManager.startUpdate();
+    res->print("{\"started\":true}");
+}
+
+void WebServerManager::handleOTAStatus(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
+    res->setHeader("Content-Type", "application/json");
+    
+    OTAResult status = otaManager.getStatus();
+    
+    String statusStr;
+    switch (status.status) {
+        case OTA_IDLE: statusStr = "idle"; break;
+        case OTA_CHECKING: statusStr = "checking"; break;
+        case OTA_DOWNLOADING: statusStr = "downloading"; break;
+        case OTA_INSTALLING: statusStr = "installing"; break;
+        case OTA_SUCCESS: statusStr = "success"; break;
+        case OTA_FAILED: statusStr = "failed"; break;
+        default: statusStr = "unknown"; break;
+    }
+    
+    String json = "{";
+    json += "\"status\":\"" + statusStr + "\",";
+    json += "\"progress\":" + String(status.progress) + ",";
+    json += "\"message\":\"" + status.message + "\",";
+    json += "\"totalBytes\":" + String(status.totalBytes) + ",";
+    json += "\"downloadedBytes\":" + String(status.downloadedBytes);
+    json += "}";
+    
+    res->print(json);
 }

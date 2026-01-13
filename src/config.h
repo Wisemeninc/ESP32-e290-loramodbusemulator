@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 165  // v1.65 - Display: Enhanced uptime with days/hours/minutes detail
+#define FIRMWARE_VERSION 166  // v1.66 - Display: Enhanced uptime with days/hours/minutes detail
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
@@ -90,5 +90,17 @@ struct LoRaProfile {
 // WIFI CONFIGURATION
 // ============================================================================
 const unsigned long WIFI_TIMEOUT_MS = 20 * 60 * 1000;  // 20 minutes
+
+// ============================================================================
+// OTA UPDATE CONFIGURATION
+// ============================================================================
+// GitHub Personal Access Token for OTA updates from private repository
+// Generate at: GitHub → Settings → Developer settings → Personal access tokens
+// Required scope: "repo" (Full control of private repositories)
+// Leave empty to configure via web interface instead
+#define GITHUB_PAT "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"
+
+// Set to true to prefer the hardcoded token over the web-configured one
+#define GITHUB_PAT_PREFER_HARDCODED true
 
 #endif // CONFIG_H
