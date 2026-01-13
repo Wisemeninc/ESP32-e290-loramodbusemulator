@@ -1363,12 +1363,6 @@ void WebServerManager::handleOTA(HTTPRequest * req, HTTPResponse * res) {
     res->print("else if(data.status==='failed'){clearInterval(checkInterval);document.getElementById('updateStatus').innerHTML='<div class=\"status error\">Failed: '+data.message+'</div>';}");
     res->print("}).catch(e=>{});");
     res->print("}");
-    res->print("function saveToken(){");
-    res->print("const token=document.getElementById('ghToken').value;");
-    res->print("if(!token){alert('Please enter a token');return;}");
-    res->print("fetch('/ota/config',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'token='+encodeURIComponent(token)})");
-    res->print(".then(r=>r.json()).then(data=>{if(data.success){alert('Token saved!');location.reload();}else{alert('Failed: '+(data.error||'Unknown'));}}).catch(e=>{alert('Failed');});");
-    res->print("}");
     res->print("</script>");
     
     // CSS styles
@@ -1384,7 +1378,6 @@ void WebServerManager::handleOTA(HTTPRequest * req, HTTPResponse * res) {
     res->print(".update-btn:hover{background:#43a047;}");
     res->print(".progress-bar{background:#e0e0e0;border-radius:10px;height:20px;overflow:hidden;margin:10px 0;}");
     res->print(".progress-fill{background:linear-gradient(90deg,#4caf50,#8bc34a);height:100%;width:0%;transition:width 0.3s;}");
-    res->print(".token-masked{font-family:monospace;background:#f5f5f5;padding:5px 10px;border-radius:4px;}");
     res->print("</style>");
 
     res->print("<h1>Firmware Update (OTA)</h1>");
@@ -1397,44 +1390,12 @@ void WebServerManager::handleOTA(HTTPRequest * req, HTTPResponse * res) {
     res->print("<p><strong>Repository:</strong> <a href='https://github.com/" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "' target='_blank'>" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "</a></p>");
     res->print("</div>");
 
-    // GitHub Token Configuration
-    res->print("<div class='card'>");
-    res->print("<h3>GitHub Authentication</h3>");
-    
-    if (otaManager.hasToken()) {
-        String token = otaManager.getGitHubToken();
-        String maskedToken = token.substring(0, 4) + "..." + token.substring(token.length() - 4);
-        res->print("<p>Token configured: <span class='token-masked'>" + maskedToken + "</span></p>");
-        res->print("<p style='font-size:12px;color:#7f8c8d;'>Enter a new token below to replace.</p>");
-    } else {
-        res->print("<div class='warning'>");
-        res->print("<strong>GitHub Token Required</strong><br>");
-        res->print("A Personal Access Token (PAT) is required to download firmware from the private repository.");
-        res->print("</div>");
-    }
-    
-    res->print("<p style='margin-top:15px;'><strong>How to create a GitHub token:</strong></p>");
-    res->print("<ol style='text-align:left;margin:10px 0;padding-left:20px;font-size:14px;'>");
-    res->print("<li>Go to GitHub Settings - Developer settings - Personal access tokens - Tokens (classic)</li>");
-    res->print("<li>Click 'Generate new token (classic)'</li>");
-    res->print("<li>Give it a name (e.g., 'ESP32-OTA')</li>");
-    res->print("<li>Select scope: <code>repo</code> (Full control of private repositories)</li>");
-    res->print("<li>Click 'Generate token' and copy it</li>");
-    res->print("</ol>");
-    
-    res->print("<div style='margin-top:15px;'>");
-    res->print("<label>GitHub Personal Access Token:</label>");
-    res->print("<input type='password' id='ghToken' placeholder='ghp_xxxxxxxxxxxx' style='margin-bottom:10px;'>");
-    res->print("<button onclick='saveToken()'>Save Token</button>");
-    res->print("</div>");
-    res->print("</div>");
-
     // Update Check Section
     res->print("<div class='card'>");
     res->print("<h3>Check for Updates</h3>");
     
     if (!otaManager.hasToken()) {
-        res->print("<p style='color:#e74c3c;'>Configure a GitHub token above to check for updates.</p>");
+        res->print("<p style='color:#e74c3c;'>GitHub token not configured. Check config.h</p>");
         res->print("<button disabled style='opacity:0.5;'>Check for Updates</button>");
     } else {
         res->print("<button id='checkBtn' onclick='checkForUpdates()'>Check for Updates</button>");
