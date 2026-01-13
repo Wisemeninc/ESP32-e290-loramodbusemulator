@@ -129,7 +129,7 @@ String OTAManager::makeGitHubApiRequest(const String& endpoint) {
     client.setCACert(github_root_ca);
     
     HTTPClient http;
-    String url = "https://api.github.com" + endpoint;
+    String url = String("https://api.github.com") + endpoint;
     
     Serial.println("[OTA] API Request: " + url);
     
