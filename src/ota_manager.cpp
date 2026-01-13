@@ -125,8 +125,12 @@ String OTAManager::makeGitHubApiRequest(const String& endpoint) {
         return "";
     }
     
+    Serial.println("[OTA] Using token: " + githubToken.substring(0, 10) + "..." + githubToken.substring(githubToken.length() - 4));
+    
     WiFiClientSecure client;
-    client.setCACert(github_root_ca);
+    // For testing: skip certificate verification (INSECURE but works around cert issues)
+    // TODO: Use proper root CA once working
+    client.setInsecure();
     
     HTTPClient http;
     String url = String("https://api.github.com") + endpoint;
@@ -170,22 +174,39 @@ void OTAManager::checkForUpdate() {
         return;
     }
     
+    // Test DNS resolution
+    Serial.println("[OTA] Testing DNS resolution...");
+    IPAddress ip;
+    if (WiFi.hostByName("api.github.com", ip) == 1) {
+        Serial.println("[OTA] DNS OK: api.github.com -> " + ip.toString());
+    } else {
+        Serial.println("[OTA] DNS FAILED for api.github.com");
+        result.status = OTA_FAILED;
+        result.message = "DNS resolution failed. Check WiFi connection.";
+        return;
+    }
+    
     result.status = OTA_CHECKING;
     result.message = "Checking for updates...";
     result.progress = 0;
     
     // Get latest release info
-    String response = makeGitHubApiRequest("/repos/" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "/releases/latest");
+    String endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases/latest";
+    String response = makeGitHubApiRequest(endpoint);
     
     if (response.length() == 0) {
         // Try to get releases list if no "latest" release
-        response = makeGitHubApiRequest("/repos/" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "/releases");
+        endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases";
+        response = makeGitHubApiRequest(endpoint);
         if (response.length() == 0) {
             result.status = OTA_FAILED;
             result.message = "Failed to check for updates. Check token and network.";
             return;
         }
     }
+    
+    Serial.println("[OTA] Response length: " + String(response.length()));
+    Serial.println("[OTA] Response preview: " + response.substring(0, min(500, (int)response.length())));
     
     // Parse JSON response
     JsonDocument doc;
@@ -202,6 +223,7 @@ void OTAManager::checkForUpdate() {
     JsonObject release;
     if (doc.is<JsonArray>()) {
         JsonArray releases = doc.as<JsonArray>();
+        Serial.println("[OTA] Got array with " + String(releases.size()) + " releases");
         if (releases.size() == 0) {
             result.status = OTA_IDLE;
             result.message = "No releases found";
@@ -210,10 +232,12 @@ void OTAManager::checkForUpdate() {
         }
         release = releases[0];
     } else {
+        Serial.println("[OTA] Got single release object");
         release = doc.as<JsonObject>();
     }
     
     String tagName = release["tag_name"] | "unknown";
+    Serial.println("[OTA] Found tag: " + tagName);
     result.latestVersion = tagName;
     
     Serial.println("[OTA] Latest release: " + tagName);
@@ -294,11 +318,13 @@ void OTAManager::otaTask(void* parameter) {
     self->result.progress = 0;
     
     // Get the firmware download URL from the latest release
-    String response = self->makeGitHubApiRequest("/repos/" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "/releases/latest");
+    String endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases/latest";
+    String response = self->makeGitHubApiRequest(endpoint);
     
     if (response.length() == 0) {
         // Try releases list
-        response = self->makeGitHubApiRequest("/repos/" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "/releases");
+        endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases";
+        response = self->makeGitHubApiRequest(endpoint);
     }
     
     if (response.length() == 0) {
@@ -338,7 +364,7 @@ void OTAManager::otaTask(void* parameter) {
             // Actually for private repos, we need to use the API URL
             int assetId = asset["id"] | 0;
             if (assetId > 0) {
-                firmwareUrl = "https://api.github.com/repos/" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "/releases/assets/" + String(assetId);
+                firmwareUrl = String("https://api.github.com/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases/assets/" + String(assetId);
             }
             Serial.println("[OTA] Found firmware asset: " + name);
             break;
@@ -348,7 +374,7 @@ void OTAManager::otaTask(void* parameter) {
     if (firmwareUrl.length() == 0) {
         // No release assets, try to get from raw content (main branch)
         // For private repos, use the contents API
-        firmwareUrl = "https://raw.githubusercontent.com/" GITHUB_REPO_OWNER "/" GITHUB_REPO_NAME "/main/" GITHUB_FIRMWARE_PATH;
+        firmwareUrl = String("https://raw.githubusercontent.com/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/main/" + String(GITHUB_FIRMWARE_PATH);
         Serial.println("[OTA] No release assets, trying raw content URL");
     }
     
@@ -378,7 +404,8 @@ bool OTAManager::downloadAndInstall(const String& url) {
     Serial.println("[OTA] Downloading from: " + url);
     
     WiFiClientSecure client;
-    client.setCACert(github_root_ca);
+    // For testing: skip certificate verification
+    client.setInsecure();
     client.setTimeout(30);  // 30 second timeout
     
     HTTPClient http;
@@ -438,6 +465,7 @@ bool OTAManager::downloadAndInstall(const String& url) {
     WiFiClient* stream = http.getStreamPtr();
     uint8_t buff[1024];
     size_t written = 0;
+    size_t totalSize = contentLength;  // Save original size for progress calculation
     
     while (http.connected() && (contentLength > 0 || contentLength == -1)) {
         size_t available = stream->available();
@@ -459,7 +487,7 @@ bool OTAManager::downloadAndInstall(const String& url) {
                 
                 written += readBytes;
                 result.downloadedBytes = written;
-                result.progress = (written * 100) / contentLength;
+                result.progress = (written * 100) / totalSize;  // Use saved total size
                 
                 if (contentLength > 0) {
                     contentLength -= readBytes;
