@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 166  // v1.66 - Display: Enhanced uptime with days/hours/minutes detail
+#define FIRMWARE_VERSION 167  // v1.67 - OTA firmware updates from private GitHub repo
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
