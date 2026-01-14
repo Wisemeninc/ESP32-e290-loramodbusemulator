@@ -394,27 +394,41 @@ void OTAManager::otaTask(void* parameter) {
     String endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases/latest";
     String response = self->makeGitHubApiRequest(endpoint);
     
+    // Reset watchdog after API call
+    esp_task_wdt_reset();
+    
     if (response.length() == 0) {
         // Try releases list
         endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases";
         response = self->makeGitHubApiRequest(endpoint);
+        
+        // Reset watchdog after second API call
+        esp_task_wdt_reset();
     }
     
     if (response.length() == 0) {
         self->result.status = OTA_FAILED;
         self->result.message = "Failed to get release info";
         self->taskRunning = false;
+        esp_task_wdt_delete(NULL);
         vTaskDelete(NULL);
         return;
     }
     
+    // Reset watchdog before JSON parsing
+    esp_task_wdt_reset();
+    
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
+    
+    // Reset watchdog after JSON parsing
+    esp_task_wdt_reset();
     
     if (error) {
         self->result.status = OTA_FAILED;
         self->result.message = "Failed to parse release info";
         self->taskRunning = false;
+        esp_task_wdt_delete(NULL);
         vTaskDelete(NULL);
         return;
     }
@@ -426,6 +440,9 @@ void OTAManager::otaTask(void* parameter) {
     } else {
         release = doc.as<JsonObject>();
     }
+    
+    // Reset watchdog before asset search
+    esp_task_wdt_reset();
     
     String firmwareUrl = "";
     JsonArray assets = release["assets"];
@@ -444,6 +461,9 @@ void OTAManager::otaTask(void* parameter) {
         }
     }
     
+    // Reset watchdog after asset search
+    esp_task_wdt_reset();
+    
     if (firmwareUrl.length() == 0) {
         // No release assets, try to get from raw content (main branch)
         // For private repos, use the contents API
@@ -454,8 +474,12 @@ void OTAManager::otaTask(void* parameter) {
     // Download and install firmware
     self->result.message = "Downloading firmware...";
     
+    // Reset watchdog before download
+    esp_task_wdt_reset();
+    
     if (!self->downloadAndInstall(firmwareUrl)) {
         self->taskRunning = false;
+        esp_task_wdt_delete(NULL);
         vTaskDelete(NULL);
         return;
     }
@@ -476,6 +500,9 @@ void OTAManager::otaTask(void* parameter) {
 bool OTAManager::downloadAndInstall(const String& url) {
     Serial.println("[OTA] Downloading from: " + url);
     
+    // Reset watchdog before download setup
+    esp_task_wdt_reset();
+    
     WiFiClientSecure client;
     // For testing: skip certificate verification
     client.setInsecure();
@@ -484,6 +511,9 @@ bool OTAManager::downloadAndInstall(const String& url) {
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(60000);  // 60 second timeout
+    
+    // Reset watchdog before HTTP begin
+    esp_task_wdt_reset();
     
     if (!http.begin(client, url)) {
         result.status = OTA_FAILED;
@@ -500,7 +530,14 @@ bool OTAManager::downloadAndInstall(const String& url) {
         http.addHeader("Accept", "application/octet-stream");
     }
     
+    // Reset watchdog before HTTP GET (SSL handshake and initial connection)
+    esp_task_wdt_reset();
+    Serial.println("[OTA] Starting download...");
+    
     int httpCode = http.GET();
+    
+    // Reset watchdog after HTTP GET completes
+    esp_task_wdt_reset();
     
     if (httpCode != HTTP_CODE_OK) {
         Serial.printf("[OTA] HTTP error: %d\n", httpCode);

@@ -5,6 +5,17 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.86] - 2026-01-14
+
+### Fixed
+- **Enhanced OTA Watchdog Protection**: Added comprehensive watchdog resets throughout entire OTA process
+  - Watchdog resets after each GitHub API call
+  - Watchdog resets before/after JSON parsing operations
+  - Watchdog resets during asset search and URL preparation
+  - Watchdog resets before download HTTP connection and GET request
+  - Added esp_task_wdt_delete(NULL) before task deletion to properly unregister from watchdog
+  - Prevents timeout during long SSL handshakes in download phase
+
 ## [1.85] - 2026-01-14
 
 ### Changed
