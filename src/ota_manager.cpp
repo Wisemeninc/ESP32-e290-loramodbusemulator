@@ -165,11 +165,17 @@ String OTAManager::makeGitHubApiRequest(const String& endpoint) {
     // For testing: skip certificate verification (INSECURE but works around cert issues)
     // TODO: Use proper root CA once working
     client.setInsecure();
+    client.setTimeout(15);  // 15 second timeout for SSL handshake
     
     HTTPClient http;
     String url = String("https://api.github.com") + endpoint;
     
     Serial.println("[OTA] API Request: " + url);
+    
+    // Reset watchdog before SSL connection
+    if (xTaskGetCurrentTaskHandle() != NULL) {
+        esp_task_wdt_reset();
+    }
     
     if (!http.begin(client, url)) {
         Serial.println("[OTA] Failed to begin HTTP connection");
@@ -179,9 +185,20 @@ String OTAManager::makeGitHubApiRequest(const String& endpoint) {
     http.addHeader("Authorization", "Bearer " + githubToken);
     http.addHeader("Accept", "application/vnd.github.v3+json");
     http.addHeader("User-Agent", "ESP32-OTA-Updater");
+    http.setTimeout(15000);  // 15 second HTTP timeout
+    
+    // Reset watchdog before HTTP GET (SSL handshake happens here)
+    if (xTaskGetCurrentTaskHandle() != NULL) {
+        esp_task_wdt_reset();
+    }
     
     int httpCode = http.GET();
     String response = "";
+    
+    // Reset watchdog after HTTP GET completes
+    if (xTaskGetCurrentTaskHandle() != NULL) {
+        esp_task_wdt_reset();
+    }
     
     if (httpCode == HTTP_CODE_OK) {
         response = http.getString();
@@ -224,14 +241,30 @@ void OTAManager::checkForUpdate() {
     result.message = "Checking for updates...";
     result.progress = 0;
     
+    // Reset watchdog before API call
+    if (xTaskGetCurrentTaskHandle() != NULL) {
+        esp_task_wdt_reset();
+    }
+    
     // Get latest release info
     String endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases/latest";
     String response = makeGitHubApiRequest(endpoint);
+    
+    // Reset watchdog after API call
+    if (xTaskGetCurrentTaskHandle() != NULL) {
+        esp_task_wdt_reset();
+    }
     
     if (response.length() == 0) {
         // Try to get releases list if no "latest" release
         endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases";
         response = makeGitHubApiRequest(endpoint);
+        
+        // Reset watchdog after second API call
+        if (xTaskGetCurrentTaskHandle() != NULL) {
+            esp_task_wdt_reset();
+        }
+        
         if (response.length() == 0) {
             result.status = OTA_FAILED;
             result.message = "Failed to check for updates. Check token and network.";
