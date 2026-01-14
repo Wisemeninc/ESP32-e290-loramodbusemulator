@@ -2,6 +2,7 @@
 #define WEB_SERVER_H
 
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 #include <HTTPServer.hpp>
 #include <HTTPSServer.hpp>
 #include <SSLCert.hpp>

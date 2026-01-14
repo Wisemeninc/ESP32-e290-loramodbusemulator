@@ -36,11 +36,11 @@ void WebServerManager::begin() {
     Serial.println("HTTPS server started on port 443");
     Serial.println("HTTP redirect server started on port 80");
 
-    // Start server task on Core 0 (Radio/WiFi core) with large stack
+    // Start server task on Core 0 (Radio/WiFi core) with large stack for SSL
     xTaskCreatePinnedToCore(
         serverTask,         // Function
         "WebServerTask",    // Name
-        8192,               // Stack size (8KB)
+        16384,              // Stack size (16KB) - increased for SSL operations
         this,               // Parameter
         1,                  // Priority
         &serverTaskHandle,  // Handle
@@ -54,10 +54,20 @@ void WebServerManager::handle() {
 
 void WebServerManager::serverTask(void* parameter) {
     WebServerManager* self = (WebServerManager*)parameter;
+    
+    // Add this task to watchdog monitoring
+    esp_task_wdt_add(NULL);
+    
     while (true) {
+        // Reset watchdog timer to prevent timeout during SSL operations
+        esp_task_wdt_reset();
+        
         if (self->server) self->server->loop();
         if (self->redirectServer) self->redirectServer->loop();
-        delay(2); // Yield to other tasks
+        delay(10); // Increased delay to allow more time for SSL operations
+        
+        // Reset watchdog again after server operations
+        esp_task_wdt_reset();
     }
 }
 
