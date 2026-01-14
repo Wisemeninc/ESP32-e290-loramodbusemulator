@@ -33,7 +33,8 @@ public:
         uint32_t lorawan_uplink_count,
         int16_t lorawan_last_rssi,
         float lorawan_last_snr,
-        uint64_t devEUI
+        uint64_t devEUI,
+        bool update_available = false
     );
     void showWiFiCredentials(const char* ssid, const char* password);
 
@@ -41,6 +42,7 @@ public:
     void drawChar(int x, int y, char c, int scale = 1);
     void drawText(int x, int y, const char* text, int scale = 1);
     void drawNumber(int x, int y, float value, int decimals, int scale = 1);
+    void drawUpdateIcon(int x, int y);
 
 private:
     EInkDisplay_VisionMasterE290 display;

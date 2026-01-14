@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 168  // v1.68 - OTA firmware updates from private GitHub repo
+#define FIRMWARE_VERSION 169  // v1.69 - Auto update checking with display icon, NVS error fixes
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
@@ -102,5 +102,8 @@ const unsigned long WIFI_TIMEOUT_MS = 20 * 60 * 1000;  // 20 minutes
 
 // Set to true to prefer the hardcoded token over the web-configured one
 #define GITHUB_PAT_PREFER_HARDCODED true
+
+// Automatic update checking configuration
+#define AUTO_UPDATE_CHECK_INTERVAL_HOURS 1  // Check for updates every hour when WiFi connected
 
 #endif // CONFIG_H

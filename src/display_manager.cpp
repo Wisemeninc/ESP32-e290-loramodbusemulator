@@ -141,7 +141,8 @@ void DisplayManager::update(
     uint32_t lorawan_uplink_count,
     int16_t lorawan_last_rssi,
     float lorawan_last_snr,
-    uint64_t devEUI
+    uint64_t devEUI,
+    bool update_available
 ) {
     display.clear();
 
@@ -171,6 +172,11 @@ void DisplayManager::update(
         drawText(210, 2, lora_info, 1);
     } else {
         drawText(187, 2, "NO", 1);
+    }
+    
+    // Update available icon (top right corner)
+    if (update_available) {
+        drawUpdateIcon(283, 1);  // Position in upper right corner
     }
 
     // Title area - scale 1 for compactness
@@ -428,4 +434,26 @@ void DisplayManager::drawNumber(int x, int y, float value, int decimals, int sca
         snprintf(buffer, sizeof(buffer), "%.2f", value);
     }
     drawText(x, y, buffer, scale);
+}
+
+void DisplayManager::drawUpdateIcon(int x, int y) {
+    // Draw a simple update/arrow icon (12x10 pixels)
+    // Circular arrow icon to represent update available
+    
+    // Draw outer circle (8px diameter)
+    display.drawCircle(x + 4, y + 4, 4, FG_COLOR);
+    
+    // Draw arrow pointing clockwise
+    // Top arrow point
+    display.drawLine(x + 6, y + 1, x + 8, y + 2, FG_COLOR);
+    display.drawLine(x + 8, y + 2, x + 7, y + 4, FG_COLOR);
+    
+    // Bottom arrow point  
+    display.drawLine(x + 2, y + 7, x, y + 6, FG_COLOR);
+    display.drawLine(x, y + 6, x + 1, y + 4, FG_COLOR);
+    
+    // Small "!" in center to make it more obvious
+    display.drawPixel(x + 4, y + 3, FG_COLOR);
+    display.drawPixel(x + 4, y + 4, FG_COLOR);
+    display.drawPixel(x + 4, y + 6, FG_COLOR);
 }

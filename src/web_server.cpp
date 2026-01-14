@@ -338,9 +338,13 @@ void WebServerManager::handleRoot(HTTPRequest * req, HTTPResponse * res) {
     // TCP Enable Checkbox
     // We need to read the current preference for TCP enabled
     Preferences prefs;
-    prefs.begin("modbus", true);
-    bool tcp_enabled = prefs.getBool("tcp_enabled", false);
-    prefs.end();
+    bool tcp_enabled = false;
+    if (prefs.begin("modbus", false)) {  // false = read-write, creates if needed
+        tcp_enabled = prefs.getBool("tcp_enabled", false);
+        prefs.end();
+    } else {
+        Serial.println("[WEB] Failed to open modbus preferences");
+    }
     
     res->print("<div style='text-align:left;margin:20px 0;'>");
     res->print("<label style='display:flex;align-items:center;cursor:pointer;'>");

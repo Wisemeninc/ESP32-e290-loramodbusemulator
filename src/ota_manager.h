@@ -64,6 +64,10 @@ public:
     // Check if update is in progress
     bool isUpdating();
     
+    // Auto-update checking configuration
+    void setUpdateCheckInterval(uint8_t hours);
+    uint8_t getUpdateCheckInterval();
+    
 private:
     OTAResult result;
     String githubToken;

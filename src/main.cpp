@@ -83,10 +83,16 @@ void setup() {
     // Initialize Modbus RTU
     // Get slave ID from preferences or default
     Preferences prefs;
-    prefs.begin("modbus", true);
-    uint8_t slave_id = prefs.getUChar("slave_id", MB_SLAVE_ID_DEFAULT);
-    bool tcp_enabled = prefs.getBool("tcp_enabled", false);
-    prefs.end();
+    uint8_t slave_id = MB_SLAVE_ID_DEFAULT;
+    bool tcp_enabled = false;
+    
+    if (prefs.begin("modbus", false)) {  // false = read-write, creates if needed
+        slave_id = prefs.getUChar("slave_id", MB_SLAVE_ID_DEFAULT);
+        tcp_enabled = prefs.getBool("tcp_enabled", false);
+        prefs.end();
+    } else {
+        Serial.println("[MODBUS] Failed to open preferences, using defaults");
+    }
     
     modbusHandler.begin(slave_id);
 
@@ -112,6 +118,7 @@ void loop() {
     static unsigned long last_display_update = 0;
     static unsigned long last_sf6_update = 0;
     static unsigned long last_tcp_sync = 0;
+    static unsigned long last_ota_check = 0;
 
     unsigned long now = millis();
 
@@ -169,6 +176,10 @@ void loop() {
     // Update Display every 30 seconds
     if (now - last_display_update >= 30000) {
         last_display_update = now;
+        
+        // Check if an update is available from OTA manager
+        bool update_available = otaManager.getStatus().updateAvailable;
+        
         displayManager.update(
             modbusHandler.getHoldingRegisters(),
             modbusHandler.getInputRegisters(),
@@ -180,8 +191,32 @@ void loop() {
             lorawanHandler.getUplinkCount(),
             lorawanHandler.getLastRSSI(),
             lorawanHandler.getLastSNR(),
-            lorawanHandler.getDevEUI()
+            lorawanHandler.getDevEUI(),
+            update_available
         );
+    }
+
+    // Check for OTA updates periodically when WiFi is connected
+    if (wifiManager.isClientConnected()) {
+        // Reset timer on first WiFi connection to check immediately 
+        static bool was_connected = false;
+        if (!was_connected) {
+            last_ota_check = 0; // Reset timer to trigger immediate check
+            was_connected = true;
+            Serial.println("[AUTO] WiFi connected - will check for updates shortly");
+        }
+        
+        if (now - last_ota_check >= (otaManager.getUpdateCheckInterval() * 60 * 60 * 1000UL)) {
+            last_ota_check = now;
+            if (!otaManager.isUpdating()) {
+                Serial.printf("[AUTO] Checking for firmware updates (interval: %d hours)...\n", 
+                             otaManager.getUpdateCheckInterval());
+                otaManager.checkForUpdate();
+            }
+        }
+    } else {
+        static bool was_connected = true;
+        was_connected = false;
     }
 
     // Handle LoRaWAN Uplinks (Auto-rotation and periodic sending)

@@ -45,6 +45,33 @@ void OTAManager::begin() {
     Serial.println("[OTA] Manager initialized, current version: " + result.currentVersion);
 }
 
+void OTAManager::setUpdateCheckInterval(uint8_t hours) {
+    if (hours == 0 || hours > 24) return;  // Invalid range
+    
+    Preferences prefs;
+    if (prefs.begin("ota", false)) {  // false = read-write
+        prefs.putUChar("check_interval", hours);
+        prefs.end();
+        Serial.printf("[OTA] Auto-check interval set to %d hours\n", hours);
+    } else {
+        Serial.println("[OTA] Failed to save update check interval to preferences");
+    }
+}
+
+uint8_t OTAManager::getUpdateCheckInterval() {
+    Preferences prefs;
+    uint8_t interval = AUTO_UPDATE_CHECK_INTERVAL_HOURS;  // Default value
+    
+    if (prefs.begin("ota", false)) {  // false = read-write, creates namespace if needed
+        interval = prefs.getUChar("check_interval", AUTO_UPDATE_CHECK_INTERVAL_HOURS);
+        prefs.end();
+    } else {
+        Serial.println("[OTA] Failed to open preferences, using default interval");
+    }
+    
+    return interval;
+}
+
 String OTAManager::getCurrentVersion() {
     char version[16];
     snprintf(version, sizeof(version), "v%d.%02d", FIRMWARE_VERSION / 100, FIRMWARE_VERSION % 100);
@@ -68,9 +95,13 @@ void OTAManager::loadToken() {
     
     // Try to load from NVS
     Preferences prefs;
-    prefs.begin("ota", true);
-    githubToken = prefs.getString("gh_token", "");
-    prefs.end();
+    if (prefs.begin("ota", false)) {  // false = read-write, creates namespace if needed
+        githubToken = prefs.getString("gh_token", "");
+        prefs.end();
+    } else {
+        Serial.println("[OTA] Failed to open preferences for token loading");
+        githubToken = "";
+    }
     
     // Fall back to hardcoded token if NVS is empty
     #ifdef GITHUB_PAT
@@ -88,15 +119,18 @@ void OTAManager::loadToken() {
 
 void OTAManager::saveToken() {
     Preferences prefs;
-    prefs.begin("ota", false);
-    prefs.putString("gh_token", githubToken);
-    prefs.end();
+    if (prefs.begin("ota", false)) {
+        prefs.putString("gh_token", githubToken);
+        prefs.end();
+        Serial.println("[OTA] GitHub token saved to preferences");
+    } else {
+        Serial.println("[OTA] Failed to save GitHub token to preferences");
+    }
 }
 
 void OTAManager::setGitHubToken(const char* token) {
     githubToken = String(token);
     saveToken();
-    Serial.println("[OTA] GitHub token saved");
 }
 
 String OTAManager::getGitHubToken() {
