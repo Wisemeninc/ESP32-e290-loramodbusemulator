@@ -1343,8 +1343,17 @@ void LoRaWANHandler::resetNonces() {
         sprintf(hasNoncesKey, "has_nonces_%d", i);
         sprintf(noncesKey, "nonces_%d", i);
         
-        preferences.remove(hasNoncesKey);
-        preferences.remove(noncesKey);
+        // Check if keys exist before trying to remove them to avoid NVS errors
+        bool hasNoncesExists = preferences.isKey(hasNoncesKey);
+        bool noncesExists = preferences.isKey(noncesKey);
+        
+        if (hasNoncesExists) {
+            preferences.remove(hasNoncesKey);
+        }
+        if (noncesExists) {
+            preferences.remove(noncesKey);
+        }
+        
         Serial.printf("✓ Cleared nonces for Profile %d\n", i);
     }
     

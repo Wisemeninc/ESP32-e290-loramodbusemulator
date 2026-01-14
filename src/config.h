@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 170  // v1.70 - Add update check status and countdown to statistics web page
+#define FIRMWARE_VERSION 171  // v1.71 - Fix NVS remove errors for nonce clearing and WiFi credentials
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION

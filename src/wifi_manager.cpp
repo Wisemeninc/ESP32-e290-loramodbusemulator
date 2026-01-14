@@ -227,9 +227,17 @@ void WiFiManager::clearClientCredentials() {
         return;
     }
 
-    preferences.remove("client_ssid");
-    preferences.remove("client_password");
-    preferences.remove("has_client");
+    // Check if keys exist before trying to remove them to avoid NVS errors
+    if (preferences.isKey("client_ssid")) {
+        preferences.remove("client_ssid");
+    }
+    if (preferences.isKey("client_password")) {
+        preferences.remove("client_password");
+    }
+    if (preferences.isKey("has_client")) {
+        preferences.remove("has_client");
+    }
+    
     preferences.end();
 
     memset(client_ssid, 0, sizeof(client_ssid));
