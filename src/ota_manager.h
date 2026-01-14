@@ -2,6 +2,7 @@
 #define OTA_MANAGER_H
 
 #include <Arduino.h>
+#include <esp_task_wdt.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <Update.h>

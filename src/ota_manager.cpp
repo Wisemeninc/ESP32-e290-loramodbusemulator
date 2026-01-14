@@ -347,9 +347,15 @@ void OTAManager::startUpdate() {
 void OTAManager::otaTask(void* parameter) {
     OTAManager* self = (OTAManager*)parameter;
     
+    // Add this task to watchdog monitoring
+    esp_task_wdt_add(NULL);
+    
     self->result.status = OTA_DOWNLOADING;
     self->result.message = "Fetching firmware URL...";
     self->result.progress = 0;
+    
+    // Reset watchdog before starting operations
+    esp_task_wdt_reset();
     
     // Get the firmware download URL from the latest release
     String endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases/latest";
@@ -502,12 +508,18 @@ bool OTAManager::downloadAndInstall(const String& url) {
     size_t totalSize = contentLength;  // Save original size for progress calculation
     
     while (http.connected() && (contentLength > 0 || contentLength == -1)) {
+        // Reset watchdog timer frequently during download
+        esp_task_wdt_reset();
+        
         size_t available = stream->available();
         
         if (available) {
             size_t readBytes = stream->readBytes(buff, min(available, sizeof(buff)));
             
             if (readBytes > 0) {
+                // Reset watchdog before flash write operation
+                esp_task_wdt_reset();
+                
                 size_t writeResult = Update.write(buff, readBytes);
                 
                 if (writeResult != readBytes) {
@@ -528,6 +540,9 @@ bool OTAManager::downloadAndInstall(const String& url) {
                 }
                 
                 Serial.printf("[OTA] Progress: %d%% (%d/%d)\n", result.progress, written, result.totalBytes);
+                
+                // Reset watchdog after flash operations
+                esp_task_wdt_reset();
             }
         }
         
@@ -536,12 +551,19 @@ bool OTAManager::downloadAndInstall(const String& url) {
     
     http.end();
     
+    // Reset watchdog before final flash operations
+    esp_task_wdt_reset();
+    Serial.println("[OTA] Finalizing firmware update...");
+    
     if (!Update.end(true)) {
         Serial.println("[OTA] Update.end() failed: " + String(Update.errorString()));
         result.status = OTA_FAILED;
         result.message = "Update failed: " + String(Update.errorString());
         return false;
     }
+    
+    // Reset watchdog after completion
+    esp_task_wdt_reset();
     
     if (!Update.isFinished()) {
         Serial.println("[OTA] Update not finished");
