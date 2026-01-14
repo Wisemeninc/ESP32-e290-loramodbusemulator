@@ -367,6 +367,11 @@ void WebServerManager::handleStats(HTTPRequest * req, HTTPResponse * res) {
     res->setHeader("Content-Type", "text/html");
     instance->printHTMLHeader(res);
     
+    // Add auto-refresh for live updates (refresh every 30 seconds)
+    res->print("<script>");
+    res->print("setTimeout(function(){ window.location.reload(); }, 30000);");
+    res->print("</script>");
+    
     res->print("<h1>System Statistics</h1>");
     
     ModbusStats& stats = modbusHandler.getStats();
@@ -385,6 +390,84 @@ void WebServerManager::handleStats(HTTPRequest * req, HTTPResponse * res) {
     res->print("<tr><td>Min Free Heap</td><td class='value'>" + String(ESP.getMinFreeHeap() / 1024) + " KB</td><td>Minimum free heap since boot</td></tr>");
     res->print("<tr><td>Temperature</td><td class='value'>" + String(temperatureRead(), 1) + " C</td><td>Internal CPU temperature</td></tr>");
     res->print("<tr><td>WiFi Clients</td><td class='value'>" + String(wifiManager.getAPClients()) + "</td><td>Connected WiFi clients</td></tr>");
+    res->print("</table>");
+
+    res->print("<h2>Firmware Updates</h2>");
+    res->print("<table><tr><th>Metric</th><th>Value</th><th>Description</th></tr>");
+    
+    // Get OTA status and calculate timing information
+    OTAResult otaStatus = otaManager.getStatus();
+    uint8_t checkInterval = otaManager.getUpdateCheckInterval();
+    
+    res->print("<tr><td>Current Version</td><td class='value'>" + otaStatus.currentVersion + "</td><td>Currently installed firmware version</td></tr>");
+    res->print("<tr><td>Check Interval</td><td class='value'>" + String(checkInterval) + " hours</td><td>How often to check for updates when WiFi connected</td></tr>");
+    
+    if (wifiManager.isClientConnected()) {
+        // Calculate approximate time until next check
+        // Note: This is an estimate based on system uptime
+        unsigned long uptimeSeconds = millis() / 1000;
+        unsigned long intervalSeconds = checkInterval * 3600UL;
+        unsigned long timeSinceLastPossibleCheck = uptimeSeconds % intervalSeconds;
+        unsigned long nextCheckIn = intervalSeconds - timeSinceLastPossibleCheck;
+        
+        // Format the countdown
+        String timeUntilNext;
+        if (nextCheckIn >= 3600) {
+            timeUntilNext = String(nextCheckIn / 3600) + "h " + String((nextCheckIn % 3600) / 60) + "m";
+        } else if (nextCheckIn >= 60) {
+            timeUntilNext = String(nextCheckIn / 60) + " minutes";
+        } else {
+            timeUntilNext = String(nextCheckIn) + " seconds";
+        }
+        
+        res->print("<tr><td>Next Check In</td><td class='value'>" + timeUntilNext + "</td><td>Estimated time until next automatic check</td></tr>");
+        res->print("<tr><td>Update Status</td><td class='value'>");
+        
+        if (otaStatus.updateAvailable) {
+            res->print("<span style='color: #e74c3c; font-weight: bold;'>⚠️ Update Available</span>");
+        } else {
+            switch (otaStatus.status) {
+                case OTA_IDLE:
+                    res->print("✅ Up to date");
+                    break;
+                case OTA_CHECKING:
+                    res->print("🔍 Checking...");
+                    break;
+                case OTA_DOWNLOADING:
+                    res->print("⬇️ Downloading...");
+                    break;
+                case OTA_INSTALLING:
+                    res->print("⚙️ Installing...");
+                    break;
+                case OTA_SUCCESS:
+                    res->print("✅ Update Successful");
+                    break;
+                case OTA_FAILED:
+                    res->print("❌ Check Failed");
+                    break;
+                default:
+                    res->print("❓ Unknown");
+            }
+        }
+        res->print("</td><td>Current update status</td></tr>");
+        
+        if (otaStatus.updateAvailable && !otaStatus.latestVersion.isEmpty()) {
+            res->print("<tr><td>Latest Version</td><td class='value' style='color: #e74c3c; font-weight: bold;'>" + otaStatus.latestVersion + "</td><td>Available firmware update</td></tr>");
+        }
+        
+        if (!otaStatus.message.isEmpty()) {
+            String messageStyle = "";
+            if (otaStatus.status == OTA_FAILED) {
+                messageStyle = "style='color: #e74c3c;'";
+            } else if (otaStatus.updateAvailable) {
+                messageStyle = "style='color: #f39c12;'";
+            }
+            res->print("<tr><td>Last Check Result</td><td class='value' " + messageStyle + ">" + otaStatus.message + "</td><td>Result of most recent update check</td></tr>");
+        }
+    } else {
+        res->print("<tr><td>WiFi Status</td><td class='value' style='color: #f39c12;'>📶 Disconnected</td><td>Connect to WiFi to enable automatic update checks</td></tr>");
+    }
+    
     res->print("</table>");
 
     res->print(FPSTR(HTML_FOOTER));
