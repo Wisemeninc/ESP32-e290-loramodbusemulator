@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 173  // v1.73 - Move update icon to bottom after version number
+#define FIRMWARE_VERSION 174  // v1.74 - Additional test version for update functionality
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
