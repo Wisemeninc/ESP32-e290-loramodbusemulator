@@ -400,13 +400,13 @@ void WebServerManager::handleStats(HTTPRequest * req, HTTPResponse * res) {
     uint8_t checkInterval = otaManager.getUpdateCheckInterval();
     
     res->print("<tr><td>Current Version</td><td class='value'>" + otaStatus.currentVersion + "</td><td>Currently installed firmware version</td></tr>");
-    res->print("<tr><td>Check Interval</td><td class='value'>" + String(checkInterval) + " hours</td><td>How often to check for updates when WiFi connected</td></tr>");
+    res->print("<tr><td>Check Interval</td><td class='value'>" + String(checkInterval) + " minutes</td><td>How often to check for updates when WiFi connected</td></tr>");
     
     if (wifiManager.isClientConnected()) {
         // Calculate approximate time until next check
         // Note: This is an estimate based on system uptime
         unsigned long uptimeSeconds = millis() / 1000;
-        unsigned long intervalSeconds = checkInterval * 3600UL;
+        unsigned long intervalSeconds = checkInterval * 60UL;
         unsigned long timeSinceLastPossibleCheck = uptimeSeconds % intervalSeconds;
         unsigned long nextCheckIn = intervalSeconds - timeSinceLastPossibleCheck;
         

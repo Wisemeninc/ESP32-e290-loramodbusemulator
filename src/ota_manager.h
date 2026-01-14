@@ -65,7 +65,7 @@ public:
     bool isUpdating();
     
     // Auto-update checking configuration
-    void setUpdateCheckInterval(uint8_t hours);
+    void setUpdateCheckInterval(uint8_t minutes);
     uint8_t getUpdateCheckInterval();
     
 private:

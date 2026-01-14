@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 176  // v1.76 - Update testing version with improved documentation
+#define FIRMWARE_VERSION 177  // v1.77 - Change update check interval to minutes for debugging
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
@@ -104,6 +104,6 @@ const unsigned long WIFI_TIMEOUT_MS = 20 * 60 * 1000;  // 20 minutes
 #define GITHUB_PAT_PREFER_HARDCODED true
 
 // Automatic update checking configuration
-#define AUTO_UPDATE_CHECK_INTERVAL_HOURS 1  // Check for updates every hour when WiFi connected
+#define AUTO_UPDATE_CHECK_INTERVAL_MINUTES 5  // Check for updates every 5 minutes (debug), use 1440 for production (1 day)
 
 #endif // CONFIG_H

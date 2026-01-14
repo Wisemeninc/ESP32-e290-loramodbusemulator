@@ -45,14 +45,14 @@ void OTAManager::begin() {
     Serial.println("[OTA] Manager initialized, current version: " + result.currentVersion);
 }
 
-void OTAManager::setUpdateCheckInterval(uint8_t hours) {
-    if (hours == 0 || hours > 24) return;  // Invalid range
+void OTAManager::setUpdateCheckInterval(uint8_t minutes) {
+    if (minutes == 0 || minutes > 1440) return;  // Invalid range (max 1 day = 1440 minutes)
     
     Preferences prefs;
     if (prefs.begin("ota", false)) {  // false = read-write
-        prefs.putUChar("check_interval", hours);
+        prefs.putUChar("check_interval", minutes);
         prefs.end();
-        Serial.printf("[OTA] Auto-check interval set to %d hours\n", hours);
+        Serial.printf("[OTA] Auto-check interval set to %d minutes\n", minutes);
     } else {
         Serial.println("[OTA] Failed to save update check interval to preferences");
     }
@@ -60,10 +60,10 @@ void OTAManager::setUpdateCheckInterval(uint8_t hours) {
 
 uint8_t OTAManager::getUpdateCheckInterval() {
     Preferences prefs;
-    uint8_t interval = AUTO_UPDATE_CHECK_INTERVAL_HOURS;  // Default value
+    uint8_t interval = AUTO_UPDATE_CHECK_INTERVAL_MINUTES;  // Default value
     
     if (prefs.begin("ota", false)) {  // false = read-write, creates namespace if needed
-        interval = prefs.getUChar("check_interval", AUTO_UPDATE_CHECK_INTERVAL_HOURS);
+        interval = prefs.getUChar("check_interval", AUTO_UPDATE_CHECK_INTERVAL_MINUTES);
         prefs.end();
     } else {
         Serial.println("[OTA] Failed to open preferences, using default interval");

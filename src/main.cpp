@@ -206,10 +206,10 @@ void loop() {
             Serial.println("[AUTO] WiFi connected - will check for updates shortly");
         }
         
-        if (now - last_ota_check >= (otaManager.getUpdateCheckInterval() * 60 * 60 * 1000UL)) {
+        if (now - last_ota_check >= (otaManager.getUpdateCheckInterval() * 60 * 1000UL)) {
             last_ota_check = now;
             if (!otaManager.isUpdating()) {
-                Serial.printf("[AUTO] Checking for firmware updates (interval: %d hours)...\n", 
+                Serial.printf("[AUTO] Checking for firmware updates (interval: %d minutes)...\n", 
                              otaManager.getUpdateCheckInterval());
                 otaManager.checkForUpdate();
             }
