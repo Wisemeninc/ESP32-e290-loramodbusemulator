@@ -5,6 +5,16 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.88] - 2026-01-14
+
+### Fixed
+- **Download Loop Watchdog Protection**: Improved watchdog handling during firmware download
+  - Time-based watchdog resets every 500ms minimum during download loop
+  - Additional watchdog resets when waiting for data (no data available)
+  - Longer delay (10ms) when waiting to give other tasks more CPU time
+  - Prevents timeout when WebServerTask and OTA task both perform SSL operations
+  - Reduced progress logging (every 10% instead of every chunk) to minimize serial overhead
+
 ## [1.87] - 2026-01-14
 
 ### Changed

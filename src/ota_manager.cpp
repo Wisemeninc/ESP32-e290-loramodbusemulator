@@ -576,10 +576,14 @@ bool OTAManager::downloadAndInstall(const String& url) {
     uint8_t buff[1024];
     size_t written = 0;
     size_t totalSize = contentLength;  // Save original size for progress calculation
+    unsigned long lastWatchdogReset = millis();
     
     while (http.connected() && (contentLength > 0 || contentLength == -1)) {
-        // Reset watchdog timer frequently during download
-        esp_task_wdt_reset();
+        // Reset watchdog timer every 500ms minimum during download
+        if (millis() - lastWatchdogReset > 500) {
+            esp_task_wdt_reset();
+            lastWatchdogReset = millis();
+        }
         
         size_t available = stream->available();
         
@@ -589,6 +593,7 @@ bool OTAManager::downloadAndInstall(const String& url) {
             if (readBytes > 0) {
                 // Reset watchdog before flash write operation
                 esp_task_wdt_reset();
+                lastWatchdogReset = millis();
                 
                 size_t writeResult = Update.write(buff, readBytes);
                 
@@ -609,14 +614,21 @@ bool OTAManager::downloadAndInstall(const String& url) {
                     contentLength -= readBytes;
                 }
                 
-                Serial.printf("[OTA] Progress: %d%% (%d/%d)\n", result.progress, written, result.totalBytes);
+                // Only print progress every 10%
+                if (result.progress % 10 == 0 && result.progress != 0) {
+                    Serial.printf("[OTA] Progress: %d%% (%d/%d)\n", result.progress, written, result.totalBytes);
+                }
                 
                 // Reset watchdog after flash operations
                 esp_task_wdt_reset();
+                lastWatchdogReset = millis();
             }
+        } else {
+            // No data available, give other tasks more time and reset watchdog
+            vTaskDelay(10);  // 10ms delay when waiting for data
+            esp_task_wdt_reset();
+            lastWatchdogReset = millis();
         }
-        
-        vTaskDelay(1);  // Yield to other tasks
     }
     
     http.end();
