@@ -173,11 +173,6 @@ void DisplayManager::update(
     } else {
         drawText(187, 2, "NO", 1);
     }
-    
-    // Update available icon (top right corner)
-    if (update_available) {
-        drawUpdateIcon(283, 1);  // Position in upper right corner
-    }
 
     // Title area - scale 1 for compactness
     drawText(3, 2, "SF6 Monitor", 1);
@@ -326,6 +321,11 @@ void DisplayManager::update(
     char version_str[10];
     snprintf(version_str, sizeof(version_str), "v%d.%02d", FIRMWARE_VERSION / 100, FIRMWARE_VERSION % 100);
     drawText(250, 115, version_str, 1);
+    
+    // Update available icon (after version number)
+    if (update_available) {
+        drawUpdateIcon(275, 115);  // Position after version number
+    }
 
     // Use partial refresh for most updates (no flicker)
     // Do full refresh every 10 updates to clear ghosting
