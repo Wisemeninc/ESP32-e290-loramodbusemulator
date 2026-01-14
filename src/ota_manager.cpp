@@ -172,11 +172,6 @@ String OTAManager::makeGitHubApiRequest(const String& endpoint) {
     
     Serial.println("[OTA] API Request: " + url);
     
-    // Reset watchdog before SSL connection
-    if (xTaskGetCurrentTaskHandle() != NULL) {
-        esp_task_wdt_reset();
-    }
-    
     if (!http.begin(client, url)) {
         Serial.println("[OTA] Failed to begin HTTP connection");
         return "";
@@ -187,18 +182,8 @@ String OTAManager::makeGitHubApiRequest(const String& endpoint) {
     http.addHeader("User-Agent", "ESP32-OTA-Updater");
     http.setTimeout(15000);  // 15 second HTTP timeout
     
-    // Reset watchdog before HTTP GET (SSL handshake happens here)
-    if (xTaskGetCurrentTaskHandle() != NULL) {
-        esp_task_wdt_reset();
-    }
-    
     int httpCode = http.GET();
     String response = "";
-    
-    // Reset watchdog after HTTP GET completes
-    if (xTaskGetCurrentTaskHandle() != NULL) {
-        esp_task_wdt_reset();
-    }
     
     if (httpCode == HTTP_CODE_OK) {
         response = http.getString();
@@ -241,29 +226,14 @@ void OTAManager::checkForUpdate() {
     result.message = "Checking for updates...";
     result.progress = 0;
     
-    // Reset watchdog before API call
-    if (xTaskGetCurrentTaskHandle() != NULL) {
-        esp_task_wdt_reset();
-    }
-    
     // Get latest release info
     String endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases/latest";
     String response = makeGitHubApiRequest(endpoint);
-    
-    // Reset watchdog after API call
-    if (xTaskGetCurrentTaskHandle() != NULL) {
-        esp_task_wdt_reset();
-    }
     
     if (response.length() == 0) {
         // Try to get releases list if no "latest" release
         endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases";
         response = makeGitHubApiRequest(endpoint);
-        
-        // Reset watchdog after second API call
-        if (xTaskGetCurrentTaskHandle() != NULL) {
-            esp_task_wdt_reset();
-        }
         
         if (response.length() == 0) {
             result.status = OTA_FAILED;
@@ -364,71 +334,54 @@ void OTAManager::startUpdate() {
         return;
     }
     
-    // Start OTA task
+    // Start OTA task on Core 1 to avoid competing with WebServerTask on Core 0
     taskRunning = true;
     xTaskCreatePinnedToCore(
         otaTask,
         "OTATask",
         16384,  // 16KB stack
         this,
-        1,
+        1,      // Priority
         &otaTaskHandle,
-        0  // Core 0
+        1       // Core 1 (WebServerTask runs on Core 0)
     );
 }
 
 void OTAManager::otaTask(void* parameter) {
     OTAManager* self = (OTAManager*)parameter;
     
-    // Add this task to watchdog monitoring
-    esp_task_wdt_add(NULL);
+    // Don't add to watchdog - Core 1 doesn't have the same IDLE task constraints
+    // and we don't want to interfere with WebServerTask's SSL operations on Core 0
     
     self->result.status = OTA_DOWNLOADING;
     self->result.message = "Fetching firmware URL...";
     self->result.progress = 0;
     
-    // Reset watchdog before starting operations
-    esp_task_wdt_reset();
-    
     // Get the firmware download URL from the latest release
     String endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases/latest";
     String response = self->makeGitHubApiRequest(endpoint);
-    
-    // Reset watchdog after API call
-    esp_task_wdt_reset();
     
     if (response.length() == 0) {
         // Try releases list
         endpoint = String("/repos/") + String(GITHUB_REPO_OWNER) + "/" + String(GITHUB_REPO_NAME) + "/releases";
         response = self->makeGitHubApiRequest(endpoint);
-        
-        // Reset watchdog after second API call
-        esp_task_wdt_reset();
     }
     
     if (response.length() == 0) {
         self->result.status = OTA_FAILED;
         self->result.message = "Failed to get release info";
         self->taskRunning = false;
-        esp_task_wdt_delete(NULL);
         vTaskDelete(NULL);
         return;
     }
     
-    // Reset watchdog before JSON parsing
-    esp_task_wdt_reset();
-    
     JsonDocument doc;
     DeserializationError error = deserializeJson(doc, response);
-    
-    // Reset watchdog after JSON parsing
-    esp_task_wdt_reset();
     
     if (error) {
         self->result.status = OTA_FAILED;
         self->result.message = "Failed to parse release info";
         self->taskRunning = false;
-        esp_task_wdt_delete(NULL);
         vTaskDelete(NULL);
         return;
     }
@@ -440,9 +393,6 @@ void OTAManager::otaTask(void* parameter) {
     } else {
         release = doc.as<JsonObject>();
     }
-    
-    // Reset watchdog before asset search
-    esp_task_wdt_reset();
     
     String firmwareUrl = "";
     JsonArray assets = release["assets"];
@@ -461,9 +411,6 @@ void OTAManager::otaTask(void* parameter) {
         }
     }
     
-    // Reset watchdog after asset search
-    esp_task_wdt_reset();
-    
     if (firmwareUrl.length() == 0) {
         // No release assets, try to get from raw content (main branch)
         // For private repos, use the contents API
@@ -474,12 +421,8 @@ void OTAManager::otaTask(void* parameter) {
     // Download and install firmware
     self->result.message = "Downloading firmware...";
     
-    // Reset watchdog before download
-    esp_task_wdt_reset();
-    
     if (!self->downloadAndInstall(firmwareUrl)) {
         self->taskRunning = false;
-        esp_task_wdt_delete(NULL);
         vTaskDelete(NULL);
         return;
     }
@@ -500,9 +443,6 @@ void OTAManager::otaTask(void* parameter) {
 bool OTAManager::downloadAndInstall(const String& url) {
     Serial.println("[OTA] Downloading from: " + url);
     
-    // Reset watchdog before download setup
-    esp_task_wdt_reset();
-    
     WiFiClientSecure client;
     // For testing: skip certificate verification
     client.setInsecure();
@@ -511,9 +451,6 @@ bool OTAManager::downloadAndInstall(const String& url) {
     HTTPClient http;
     http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
     http.setTimeout(60000);  // 60 second timeout
-    
-    // Reset watchdog before HTTP begin
-    esp_task_wdt_reset();
     
     if (!http.begin(client, url)) {
         result.status = OTA_FAILED;
@@ -530,14 +467,9 @@ bool OTAManager::downloadAndInstall(const String& url) {
         http.addHeader("Accept", "application/octet-stream");
     }
     
-    // Reset watchdog before HTTP GET (SSL handshake and initial connection)
-    esp_task_wdt_reset();
     Serial.println("[OTA] Starting download...");
     
     int httpCode = http.GET();
-    
-    // Reset watchdog after HTTP GET completes
-    esp_task_wdt_reset();
     
     if (httpCode != HTTP_CODE_OK) {
         Serial.printf("[OTA] HTTP error: %d\n", httpCode);
@@ -576,25 +508,14 @@ bool OTAManager::downloadAndInstall(const String& url) {
     uint8_t buff[1024];
     size_t written = 0;
     size_t totalSize = contentLength;  // Save original size for progress calculation
-    unsigned long lastWatchdogReset = millis();
     
     while (http.connected() && (contentLength > 0 || contentLength == -1)) {
-        // Reset watchdog timer every 500ms minimum during download
-        if (millis() - lastWatchdogReset > 500) {
-            esp_task_wdt_reset();
-            lastWatchdogReset = millis();
-        }
-        
         size_t available = stream->available();
         
         if (available) {
             size_t readBytes = stream->readBytes(buff, min(available, sizeof(buff)));
             
             if (readBytes > 0) {
-                // Reset watchdog before flash write operation
-                esp_task_wdt_reset();
-                lastWatchdogReset = millis();
-                
                 size_t writeResult = Update.write(buff, readBytes);
                 
                 if (writeResult != readBytes) {
@@ -615,26 +536,20 @@ bool OTAManager::downloadAndInstall(const String& url) {
                 }
                 
                 // Only print progress every 10%
-                if (result.progress % 10 == 0 && result.progress != 0) {
+                static int lastProgress = 0;
+                if (result.progress >= lastProgress + 10) {
                     Serial.printf("[OTA] Progress: %d%% (%d/%d)\n", result.progress, written, result.totalBytes);
+                    lastProgress = result.progress;
                 }
-                
-                // Reset watchdog after flash operations
-                esp_task_wdt_reset();
-                lastWatchdogReset = millis();
             }
         } else {
-            // No data available, give other tasks more time and reset watchdog
+            // No data available, give other tasks more time
             vTaskDelay(10);  // 10ms delay when waiting for data
-            esp_task_wdt_reset();
-            lastWatchdogReset = millis();
         }
     }
     
     http.end();
     
-    // Reset watchdog before final flash operations
-    esp_task_wdt_reset();
     Serial.println("[OTA] Finalizing firmware update...");
     
     if (!Update.end(true)) {
@@ -643,9 +558,6 @@ bool OTAManager::downloadAndInstall(const String& url) {
         result.message = "Update failed: " + String(Update.errorString());
         return false;
     }
-    
-    // Reset watchdog after completion
-    esp_task_wdt_reset();
     
     if (!Update.isFinished()) {
         Serial.println("[OTA] Update not finished");
