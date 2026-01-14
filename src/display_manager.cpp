@@ -320,7 +320,7 @@ void DisplayManager::update(
     // Version number at end of bottom line
     char version_str[10];
     snprintf(version_str, sizeof(version_str), "v%d.%02d", FIRMWARE_VERSION / 100, FIRMWARE_VERSION % 100);
-    drawText(250, 115, version_str, 1);
+    drawText(230, 115, version_str, 1);
     
     // Update available icon (after version number)
     if (update_available) {
