@@ -1000,7 +1000,7 @@ This code is intended for **development and testing** purposes. For production d
 4. Remove password from logs (if present in console output)
 5. Replace HTTPS_Server_Generic library to fix SSL crash bug
 6. Add CSRF protection for configuration changes
-7. Enable mDNS for consistent access in STA mode (esp32-modbus.local)
+7. Enable mDNS for consistent access in STA mode (stationsdata.local)
 8. Add rate limiting on SF6 control endpoints (/sf6/update, /sf6/reset)
 9. Implement request throttling to prevent flash wear from excessive NVS writes
 10. Add audit logging for all SF6 value changes with timestamps
@@ -1122,9 +1122,10 @@ This project was originally developed using ESP-IDF framework and has been conve
 The project uses the following key libraries (automatically installed by PlatformIO):
 
 - **heltec-eink-modules** - E-Ink display driver for Vision Master E290
-- **modbus-esp8266** - Modbus RTU implementation for Arduino
-- **RadioLib** - LoRaWAN stack with SX1262 support
+- **modbus-esp8266** (v4.1.0+) - Modbus RTU implementation for Arduino
+- **RadioLib** (v7.4.0+) - LoRaWAN stack with SX1262 support
 - **HTTPS_Server_Generic** - HTTPS web server with SSL/TLS
+- **ArduinoJson** (v7.0.0+) - JSON parsing library for GitHub API integration
 
 ## References
 
