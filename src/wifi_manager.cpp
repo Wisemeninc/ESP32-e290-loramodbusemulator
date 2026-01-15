@@ -18,9 +18,10 @@ WiFiManager::WiFiManager() :
     memset(client_password, 0, sizeof(client_password));
 
     #if MODE_PRODUCTION
-        strcpy(ap_password, "");  // Will be generated/loaded
+        ap_password[0] = '\0';  // Will be generated/loaded
     #else
-        strcpy(ap_password, "modbus123");  // Development default
+        strncpy(ap_password, "modbus123", sizeof(ap_password) - 1);
+        ap_password[sizeof(ap_password) - 1] = '\0';  // Development default
     #endif
 }
 
@@ -59,7 +60,8 @@ bool WiFiManager::startAP() {
         loadAPPassword();
     #else
         Serial.println(">>> Development mode: Using default password");
-        strcpy(ap_password, "modbus123");
+        strncpy(ap_password, "modbus123", sizeof(ap_password) - 1);
+        ap_password[sizeof(ap_password) - 1] = '\0';
     #endif
 
     // Get MAC address and extract last 4 hex digits for unique SSID
@@ -293,7 +295,8 @@ void WiFiManager::loadAPPassword() {
     if (has_password) {
         String stored_password = preferences.getString("password", "");
         if (stored_password.length() == 16) {
-            strcpy(ap_password, stored_password.c_str());
+            strncpy(ap_password, stored_password.c_str(), sizeof(ap_password) - 1);
+            ap_password[sizeof(ap_password) - 1] = '\0';
             Serial.println(">>> Loaded WiFi password from NVS");
             preferences.end();
             return;
