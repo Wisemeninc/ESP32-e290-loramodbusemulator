@@ -15,6 +15,7 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 - 💾 **Persistent configuration** stored in NVS
 - 📶 **LoRaWAN support** to transmit Modbus data wirelessly over long range
 - 📺 **2.9" E-Ink display** shows real-time register data and LoRaWAN status
+- 🔄 **OTA Updates** - Automatic firmware updates from GitHub releases
 
 Case: 
 https://www.printables.com/model/974647-vision-master-e290-v031-case-for-meshtastic/files
