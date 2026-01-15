@@ -2,12 +2,7 @@
 #define WEB_SERVER_H
 
 #include <Arduino.h>
-#include <esp_task_wdt.h>
-#include <HTTPServer.hpp>
-#include <HTTPSServer.hpp>
-#include <SSLCert.hpp>
-#include <HTTPRequest.hpp>
-#include <HTTPResponse.hpp>
+#include <esp_https_server.h>
 #include "server_cert.h"
 #include "auth_manager.h"
 #include "wifi_manager.h"
@@ -17,8 +12,6 @@
 #include "ota_manager.h"
 #include "web_pages.h"
 
-using namespace httpsserver;
-
 class WebServerManager {
 public:
     WebServerManager();
@@ -26,65 +19,66 @@ public:
     // Initialization
     void begin();
     
-    // Main loop task
+    // Main loop task (no-op for async)
     void handle();
     
 private:
-    // Server instances
-    HTTPSServer* server;
-    HTTPServer* redirectServer;
-    SSLCert* cert;
+    // HTTPS server handle (esp_https_server native)
+    httpd_handle_t httpsServer;
     
-    // Task handle
-    TaskHandle_t serverTaskHandle;
-    static void serverTask(void* parameter);
+    // HTTP redirect server (esp_http_server native)
+    httpd_handle_t httpServer;
 
     // Helper functions
     void setupRoutes();
-    String readPostBody(HTTPRequest * req);
-    bool getPostParameterFromBody(const String& body, const char* name, String& value);
-    void sendRedirect(HTTPResponse * res, const char* title, const char* message, const char* url, int delay = 3);
-    void printHTMLHeader(HTTPResponse * res);
-    bool getDarkMode();
-    void setDarkMode(bool enabled);
+    static String buildHTMLHeader();
+    static String buildHTMLFooter();
+    static bool getDarkMode();
     
-    // Request Handlers
-    static void handleRoot(HTTPRequest * req, HTTPResponse * res);
-    static void handleStats(HTTPRequest * req, HTTPResponse * res);
-    static void handleRegisters(HTTPRequest * req, HTTPResponse * res);
-    static void handleLoRaWAN(HTTPRequest * req, HTTPResponse * res);
-    static void handleLoRaWANProfiles(HTTPRequest * req, HTTPResponse * res);
-    static void handleWiFi(HTTPRequest * req, HTTPResponse * res);
-    static void handleSecurity(HTTPRequest * req, HTTPResponse * res);
+    // Static request handlers for esp_https_server
+    static esp_err_t handleRoot(httpd_req_t *req);
+    static esp_err_t handleStats(httpd_req_t *req);
+    static esp_err_t handleRegisters(httpd_req_t *req);
+    static esp_err_t handleLoRaWAN(httpd_req_t *req);
+    static esp_err_t handleLoRaWANProfiles(httpd_req_t *req);
+    static esp_err_t handleWiFi(httpd_req_t *req);
+    static esp_err_t handleSecurity(httpd_req_t *req);
     
     // Action Handlers
-    static void handleConfig(HTTPRequest * req, HTTPResponse * res);
-    static void handleLoRaWANConfig(HTTPRequest * req, HTTPResponse * res);
-    static void handleLoRaWANProfileUpdate(HTTPRequest * req, HTTPResponse * res);
-    static void handleLoRaWANProfileToggle(HTTPRequest * req, HTTPResponse * res);
-    static void handleLoRaWANProfileActivate(HTTPRequest * req, HTTPResponse * res);
-    static void handleLoRaWANAutoRotate(HTTPRequest * req, HTTPResponse * res);
-    static void handleWiFiScan(HTTPRequest * req, HTTPResponse * res);
-    static void handleWiFiConnect(HTTPRequest * req, HTTPResponse * res);
-    static void handleWiFiStatus(HTTPRequest * req, HTTPResponse * res);
-    static void handleSecurityUpdate(HTTPRequest * req, HTTPResponse * res);
-    static void handleDebugUpdate(HTTPRequest * req, HTTPResponse * res);
-    static void handleSF6Update(HTTPRequest * req, HTTPResponse * res);
-    static void handleSF6Reset(HTTPRequest * req, HTTPResponse * res);
-    static void handleEnableAuth(HTTPRequest * req, HTTPResponse * res);
-    static void handleDarkMode(HTTPRequest * req, HTTPResponse * res);
-    static void handleResetNonces(HTTPRequest * req, HTTPResponse * res);
-    static void handleFactoryReset(HTTPRequest * req, HTTPResponse * res);
-    static void handleReboot(HTTPRequest * req, HTTPResponse * res);
-    static void handleRedirect(HTTPRequest * req, HTTPResponse * res);
+    static esp_err_t handleConfig(httpd_req_t *req);
+    static esp_err_t handleLoRaWANConfig(httpd_req_t *req);
+    static esp_err_t handleLoRaWANProfileUpdate(httpd_req_t *req);
+    static esp_err_t handleLoRaWANProfileToggle(httpd_req_t *req);
+    static esp_err_t handleLoRaWANProfileActivate(httpd_req_t *req);
+    static esp_err_t handleLoRaWANAutoRotate(httpd_req_t *req);
+    static esp_err_t handleWiFiScan(httpd_req_t *req);
+    static esp_err_t handleWiFiConnect(httpd_req_t *req);
+    static esp_err_t handleWiFiStatus(httpd_req_t *req);
+    static esp_err_t handleSecurityUpdate(httpd_req_t *req);
+    static esp_err_t handleDebugUpdate(httpd_req_t *req);
+    static esp_err_t handleSF6Update(httpd_req_t *req);
+    static esp_err_t handleSF6Reset(httpd_req_t *req);
+    static esp_err_t handleEnableAuth(httpd_req_t *req);
+    static esp_err_t handleDarkMode(httpd_req_t *req);
+    static esp_err_t handleResetNonces(httpd_req_t *req);
+    static esp_err_t handleFactoryReset(httpd_req_t *req);
+    static esp_err_t handleReboot(httpd_req_t *req);
     
     // OTA Update Handlers
-    static void handleOTA(HTTPRequest * req, HTTPResponse * res);
-    static void handleOTAConfig(HTTPRequest * req, HTTPResponse * res);
-    static void handleOTACheck(HTTPRequest * req, HTTPResponse * res);
-    static void handleOTAStart(HTTPRequest * req, HTTPResponse * res);
-    static void handleOTAStatus(HTTPRequest * req, HTTPResponse * res);
-    static void handleOTAAutoInstall(HTTPRequest * req, HTTPResponse * res);
+    static esp_err_t handleOTA(httpd_req_t *req);
+    static esp_err_t handleOTAConfig(httpd_req_t *req);
+    static esp_err_t handleOTACheck(httpd_req_t *req);
+    static esp_err_t handleOTAStart(httpd_req_t *req);
+    static esp_err_t handleOTAStatus(httpd_req_t *req);
+    static esp_err_t handleOTAAutoInstall(httpd_req_t *req);
+    
+    // Helper for authentication check
+    static bool checkAuth(httpd_req_t *req);
+    static void sendUnauthorized(httpd_req_t *req);
+    static String getPostBody(httpd_req_t *req);
+    static bool getPostParameter(const String& body, const char* name, String& value);
+    static String getQueryParameter(httpd_req_t *req, const char* name);
+    static void sendRedirectPage(httpd_req_t *req, const char* title, const char* message, const char* url, int delay = 3);
 };
 
 // Global instance

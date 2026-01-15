@@ -3,10 +3,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
-#include <HTTPRequest.hpp>
-#include <HTTPResponse.hpp>
-
-using namespace httpsserver;
+#include <esp_https_server.h>
 
 // ============================================================================
 // AUTHENTICATION MANAGER CLASS
@@ -19,8 +16,11 @@ public:
     // Initialization
     void begin();
 
-    // Authentication
-    bool checkAuthentication(HTTPRequest* req, HTTPResponse* res);
+    // Authentication - for esp_https_server
+    bool checkAuthentication(httpd_req_t* req);
+    
+    // Get password for validation (used internally)
+    String getPassword();
 
     // Credentials
     void setCredentials(const char* username, const char* password);
@@ -53,9 +53,6 @@ private:
     // Debug settings
     bool debug_https_enabled;
     bool debug_auth_enabled;
-
-    // Helper functions
-    void sendUnauthorized(HTTPResponse* res, const char* message = "Authentication required");
 };
 
 // Global instance

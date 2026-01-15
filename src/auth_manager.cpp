@@ -29,7 +29,7 @@ void AuthManager::begin() {
 // AUTHENTICATION
 // ============================================================================
 
-bool AuthManager::checkAuthentication(HTTPRequest* req, HTTPResponse* res) {
+bool AuthManager::checkAuthentication(httpd_req_t* req) {
     if (debug_auth_enabled) {
         Serial.printf(">>> Auth check: enabled=%d, user=%s\n", auth_enabled, username);
     }
@@ -41,23 +41,34 @@ bool AuthManager::checkAuthentication(HTTPRequest* req, HTTPResponse* res) {
         return true;  // Auth disabled, allow access
     }
 
-    // Check for Authorization header
-    std::string authValueStd = req->getHeader("Authorization");
-    if (authValueStd.empty()) {
+    // Get Authorization header length
+    size_t auth_len = httpd_req_get_hdr_value_len(req, "Authorization");
+    if (auth_len == 0) {
         if (debug_auth_enabled) {
             Serial.println(">>> No Authorization header, requesting credentials");
         }
-        sendUnauthorized(res);
         return false;
     }
 
+    // Get Authorization header value
+    char* auth_buf = (char*)malloc(auth_len + 1);
+    if (!auth_buf) {
+        return false;
+    }
+    
+    if (httpd_req_get_hdr_value_str(req, "Authorization", auth_buf, auth_len + 1) != ESP_OK) {
+        free(auth_buf);
+        return false;
+    }
+    
+    String authValue = String(auth_buf);
+    free(auth_buf);
+
     // Parse Basic authentication header
-    String authValue = String(authValueStd.c_str());
     if (!authValue.startsWith("Basic ")) {
         if (debug_auth_enabled) {
             Serial.println(">>> Invalid auth type (not Basic)");
         }
-        sendUnauthorized(res);
         return false;
     }
 
@@ -76,7 +87,6 @@ bool AuthManager::checkAuthentication(HTTPRequest* req, HTTPResponse* res) {
         if (debug_auth_enabled) {
             Serial.printf(">>> Base64 decode failed: %d\n", ret);
         }
-        sendUnauthorized(res);
         return false;
     }
 
@@ -88,7 +98,6 @@ bool AuthManager::checkAuthentication(HTTPRequest* req, HTTPResponse* res) {
         if (debug_auth_enabled) {
             Serial.println(">>> Invalid credentials format (no colon)");
         }
-        sendUnauthorized(res);
         return false;
     }
 
@@ -107,7 +116,6 @@ bool AuthManager::checkAuthentication(HTTPRequest* req, HTTPResponse* res) {
             Serial.printf(">>> Provided username: %s, expected: %s\n",
                          providedUsername.c_str(), username);
         }
-        sendUnauthorized(res, "Invalid credentials");
         return false;
     }
 }
@@ -128,6 +136,10 @@ void AuthManager::setCredentials(const char* user, const char* pass) {
 
 String AuthManager::getUsername() {
     return String(username);
+}
+
+String AuthManager::getPassword() {
+    return String(password);
 }
 
 bool AuthManager::isEnabled() {
@@ -227,17 +239,4 @@ void AuthManager::load() {
     Serial.printf("    Username: %s\n", username);
     Serial.printf("    HTTPS Debug: %s\n", debug_https_enabled ? "YES" : "NO");
     Serial.printf("    Auth Debug: %s\n", debug_auth_enabled ? "YES" : "NO");
-}
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-void AuthManager::sendUnauthorized(HTTPResponse* res, const char* message) {
-    res->setStatusCode(401);
-    res->setHeader("WWW-Authenticate", "Basic realm=\"Vision Master E290\"");
-    res->setHeader("Content-Type", "text/html");
-    res->print("<!DOCTYPE html><html><body><h1>401 Unauthorized</h1><p>");
-    res->print(message);
-    res->println("</p></body></html>");
 }
