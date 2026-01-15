@@ -979,10 +979,9 @@ This code is intended for **development and testing** purposes. For production d
 ### WiFi Configuration Portal
 
 ⚠️ **Current Implementation:**
-- Hard-coded WiFi AP credentials (`modbus123`)
-- HTTPS enabled with self-signed certificate (10-year validity)
-- WiFi password is logged to console
-- Known SSL library bug causing intermittent crashes
+- Hard-coded WiFi AP credentials (`modbus123`) in development mode
+- HTTPS web server using ESP-IDF native SSL (self-signed certificate)
+- WiFi password is logged to console in development mode
 
 ✅ **Security Features Implemented:**
 - ✅ HTTP Basic Authentication for web interface (default: admin/admin)
@@ -992,56 +991,21 @@ This code is intended for **development and testing** purposes. For production d
 - ✅ Input validation on SF6 values (client-side HTML5 + server-side range checks)
 - ✅ Thread-safe register updates with critical section protection
 - ✅ NVS persistence with proper error handling
-- ✅ Self-signed SSL certificate ready (10-year validity, mDNS support)
+- ✅ HTTPS with self-signed certificate (port 443)
+- ✅ HTTP to HTTPS redirect (port 80 → 443)
+- ✅ mDNS support for consistent access (stationsdata.local)
+- ✅ ESP-IDF native httpd_ssl - stable, no crash issues
 
 ✅ **Additional Recommendations for Production:**
 1. Generate unique WiFi AP passwords per device (store in NVS)
 2. Change default web authentication credentials on first boot
 3. Reduce AP timeout to minimum needed (or enable via physical button)
 4. Remove password from logs (if present in console output)
-5. Replace HTTPS_Server_Generic library to fix SSL crash bug
-6. Add CSRF protection for configuration changes
-7. Enable mDNS for consistent access in STA mode (stationsdata.local)
-8. Add rate limiting on SF6 control endpoints (/sf6/update, /sf6/reset)
-9. Implement request throttling to prevent flash wear from excessive NVS writes
-10. Add audit logging for all SF6 value changes with timestamps
-11. Use production certificate signed by trusted CA (not self-signed)
-
-### Known SSL Library Vulnerability
-
-⚠️ **HTTPS_Server_Generic Library Bug (HIGH):**
-- **Issue:** Null pointer dereference in `SSL_write()` at ssl_lib.c:457
-- **Impact:** Device may reboot when responding to SF6 control requests
-- **Trigger:** Occurs during HTTPS response transmission (not during data processing)
-- **Data Safety:** ✅ SF6 values are saved to NVS BEFORE response is sent - no data loss
-- **Frequency:** Intermittent - does not happen on every request
-- **Mitigation:**
-  - User warned via yellow banner in web interface
-  - Critical data saved before potential crash point
-  - Consider replacing HTTPS_Server_Generic with esp_https_server
-  - Reduce request frequency to minimize crash probability
-
-**Error Details:**
-```
-Core 1 panic'ed (StoreProhibited). Exception was unhandled.
-PC: 0x420e2d59 in SSL_write at ssl_lib.c:457
-EXCVADDR: 0x00000038 (null pointer dereference)
-```
-
-**Why Values Are Safe:**
-```cpp
-// 1. Update values in critical section
-portENTER_CRITICAL(&timerMux);
-sf6_base_density = new_value;
-input_regs.sf6_density = raw_value;
-portEXIT_CRITICAL(&timerMux);
-
-// 2. Save to NVS immediately
-save_sf6_values();  // ✅ Completes successfully
-
-// 3. Send HTTP response (crash may occur here)
-res->setStatusCode(204);  // ⚠️ Crash point
-```
+5. Add CSRF protection for configuration changes
+6. Add rate limiting on SF6 control endpoints (/sf6/update, /sf6/reset)
+7. Implement request throttling to prevent flash wear from excessive NVS writes
+8. Add audit logging for all SF6 value changes with timestamps
+9. Use CA-signed certificate for production deployments
 
 ### Modbus Protocol
 
@@ -1099,7 +1063,6 @@ build_flags =
 | Risk Level | Issue | Status | Mitigation |
 |------------|-------|--------|------------|
 | HIGH | Hard-coded WiFi AP password | ⚠️ Open | Generate per-device passwords |
-| HIGH | SSL library crash vulnerability | ⚠️ Known Issue | HTTPS_Server_Generic bug (ssl_lib.c:457) - Data saved before crash |
 | MEDIUM | Default web credentials (admin/admin) | ⚠️ Partially Mitigated | Change on first boot, force password change |
 | MEDIUM | Self-signed certificate (MITM risk) | ⚠️ Accepted | Use CA-signed cert for production |
 | MEDIUM | No Modbus authentication | ⚠️ By Design | Physical security + monitoring |
@@ -1107,6 +1070,7 @@ build_flags =
 | MEDIUM | No rate limiting on SF6 endpoints | ⚠️ Open | Add request throttling |
 | MEDIUM | Flash wear from excessive NVS writes | ⚠️ Open | Implement write throttling |
 | LOW | No CSRF protection | ⚠️ Open | Add token validation |
+| ~~HIGH~~ | ~~SSL library crash vulnerability~~ | ✅ **Fixed v1.98** | Migrated to ESP-IDF native httpd_ssl |
 | ~~HIGH~~ | ~~Unauthenticated web config~~ | ✅ **Fixed v1.22** | HTTP Basic Auth implemented |
 | ~~MEDIUM~~ | ~~No HTTPS~~ | ✅ **Fixed v1.22** | Self-signed certificate deployed |
 | ~~MEDIUM~~ | ~~No input validation on web forms~~ | ✅ **Fixed v1.38** | Client + server-side validation |
@@ -1125,7 +1089,7 @@ The project uses the following key libraries (automatically installed by Platfor
 - **heltec-eink-modules** - E-Ink display driver for Vision Master E290
 - **modbus-esp8266** (v4.1.0+) - Modbus RTU implementation for Arduino
 - **RadioLib** (v7.4.0+) - LoRaWAN stack with SX1262 support
-- **HTTPS_Server_Generic** - HTTPS web server with SSL/TLS
+- **ESP-IDF httpd_ssl** - Native HTTPS web server with SSL/TLS (stable)
 - **ArduinoJson** (v7.0.0+) - JSON parsing library for GitHub API integration
 
 ## References
