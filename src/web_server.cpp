@@ -36,10 +36,15 @@ void WebServerManager::begin() {
     
     // Use PEM certificate from server_cert.h
     // Note: ESP-IDF uses "cacert" to mean "server cert" (confusing naming as per their comments)
+    // For PEM format, mbedtls requires null terminator included in length
     config.cacert_pem = (const uint8_t*)server_cert_pem;
     config.cacert_len = strlen(server_cert_pem) + 1;
     config.prvtkey_pem = (const uint8_t*)server_key_pem;
     config.prvtkey_len = strlen(server_key_pem) + 1;
+    
+    Serial.printf("Cert len: %d, Key len: %d\n", config.cacert_len, config.prvtkey_len);
+    Serial.printf("Cert starts: %.30s\n", server_cert_pem);
+    Serial.printf("Key starts: %.30s\n", server_key_pem);
     
     // Configure server settings
     config.httpd.max_uri_handlers = 30;
@@ -50,7 +55,7 @@ void WebServerManager::begin() {
     // Start HTTPS server
     esp_err_t ret = httpd_ssl_start(&httpsServer, &config);
     if (ret != ESP_OK) {
-        Serial.printf("Error starting HTTPS server: %d\n", ret);
+        Serial.printf("Error starting HTTPS server: 0x%x\n", ret);
         return;
     }
     
@@ -271,7 +276,7 @@ String WebServerManager::buildHTMLHeader() {
     String html;
     bool darkMode = getDarkMode();
     
-    html += "<!DOCTYPE html><html><head><title>Vision Master E290</title>";
+    html += "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Vision Master E290</title>";
     html += "<meta name='viewport' content='width=device-width, initial-scale=1'>";
     html += "<style>";
     
@@ -414,26 +419,111 @@ esp_err_t WebServerManager::handleStats(httpd_req_t *req) {
 
     String html = buildHTMLHeader();
     
-    html += "<script>setTimeout(function(){ window.location.reload(); }, 30000);</script>";
+    // Auto-refresh every 30 seconds
+    html += "<script>\n";
+    html += "setTimeout(function(){ window.location.reload(); }, 30000);\n";
+    html += "function saveAutoInstall() {\n";
+    html += "  var enabled = document.getElementById('autoInstall').checked ? '1' : '0';\n";
+    html += "  fetch('/ota/auto-install?enabled=' + enabled).then(function(r){ return r.json(); }).then(function(data){\n";
+    html += "    console.log('Auto-install saved:', data);\n";
+    html += "  });\n";
+    html += "}\n";
+    html += "</script>\n";
     
     html += "<h1>System Statistics</h1>";
     
     ModbusStats& stats = modbusHandler.getStats();
     html += "<h2>Modbus Communication</h2>";
     html += "<table><tr><th>Metric</th><th>Value</th><th>Description</th></tr>";
-    html += "<tr><td>Total Requests</td><td class='value'>" + String(stats.request_count) + "</td><td>Total Modbus RTU requests</td></tr>";
-    html += "<tr><td>Read Operations</td><td class='value'>" + String(stats.read_count) + "</td><td>Number of reads</td></tr>";
-    html += "<tr><td>Write Operations</td><td class='value'>" + String(stats.write_count) + "</td><td>Number of writes</td></tr>";
+    html += "<tr><td>Total Requests</td><td class='value'>" + String(stats.request_count) + "</td><td>Total Modbus RTU requests received</td></tr>";
+    html += "<tr><td>Read Operations</td><td class='value'>" + String(stats.read_count) + "</td><td>Number of read operations</td></tr>";
+    html += "<tr><td>Write Operations</td><td class='value'>" + String(stats.write_count) + "</td><td>Number of write operations</td></tr>";
     html += "<tr><td>Error Count</td><td class='value'>" + String(stats.error_count) + "</td><td>Communication errors</td></tr>";
     html += "</table>";
 
     html += "<h2>System Information</h2>";
     html += "<table><tr><th>Metric</th><th>Value</th><th>Description</th></tr>";
-    html += "<tr><td>Uptime</td><td class='value'>" + String(millis() / 1000) + " seconds</td><td>Since last boot</td></tr>";
-    html += "<tr><td>Free Heap</td><td class='value'>" + String(ESP.getFreeHeap() / 1024) + " KB</td><td>Available RAM</td></tr>";
-    html += "<tr><td>Min Free Heap</td><td class='value'>" + String(ESP.getMinFreeHeap() / 1024) + " KB</td><td>Minimum since boot</td></tr>";
-    html += "<tr><td>Temperature</td><td class='value'>" + String(temperatureRead(), 1) + " C</td><td>CPU temperature</td></tr>";
+    html += "<tr><td>Uptime</td><td class='value'>" + String(millis() / 1000) + " seconds</td><td>System uptime since last boot</td></tr>";
+    html += "<tr><td>Free Heap</td><td class='value'>" + String(ESP.getFreeHeap() / 1024) + " KB</td><td>Available RAM memory</td></tr>";
+    html += "<tr><td>Min Free Heap</td><td class='value'>" + String(ESP.getMinFreeHeap() / 1024) + " KB</td><td>Minimum free heap since boot</td></tr>";
+    html += "<tr><td>Temperature</td><td class='value'>" + String(temperatureRead(), 1) + " C</td><td>Internal CPU temperature</td></tr>";
+    html += "<tr><td>WiFi Clients</td><td class='value'>" + String(wifiManager.getAPClients()) + "</td><td>Connected WiFi clients</td></tr>";
     html += "</table>";
+
+    // Firmware Updates section
+    html += "<h2>Firmware Updates</h2>";
+    html += "<table><tr><th>Metric</th><th>Value</th><th>Description</th></tr>";
+    
+    OTAResult otaStatus = otaManager.getStatus();
+    uint8_t checkInterval = otaManager.getUpdateCheckInterval();
+    
+    html += "<tr><td>Current Version</td><td class='value'>" + otaStatus.currentVersion + "</td><td>Currently installed firmware version</td></tr>";
+    html += "<tr><td>Check Interval</td><td class='value'>" + String(checkInterval) + " minutes</td><td>How often to check for updates when WiFi connected</td></tr>";
+    
+    if (wifiManager.isClientConnected()) {
+        // Calculate approximate time until next check
+        unsigned long uptimeSeconds = millis() / 1000;
+        unsigned long intervalSeconds = checkInterval * 60UL;
+        unsigned long timeSinceLastPossibleCheck = uptimeSeconds % intervalSeconds;
+        unsigned long nextCheckIn = intervalSeconds - timeSinceLastPossibleCheck;
+        
+        String timeUntilNext;
+        if (nextCheckIn >= 3600) {
+            timeUntilNext = String(nextCheckIn / 3600) + "h " + String((nextCheckIn % 3600) / 60) + "m";
+        } else if (nextCheckIn >= 60) {
+            timeUntilNext = String(nextCheckIn / 60) + " minutes";
+        } else {
+            timeUntilNext = String(nextCheckIn) + " seconds";
+        }
+        
+        html += "<tr><td>Next Check In</td><td class='value'>" + timeUntilNext + "</td><td>Estimated time until next automatic check</td></tr>";
+        html += "<tr><td>Update Status</td><td class='value'>";
+        
+        if (otaStatus.updateAvailable) {
+            html += "<span style='color: #e74c3c; font-weight: bold;'>Update Available</span>";
+        } else {
+            switch (otaStatus.status) {
+                case OTA_IDLE: html += "Up to date"; break;
+                case OTA_CHECKING: html += "Checking..."; break;
+                case OTA_DOWNLOADING: html += "Downloading..."; break;
+                case OTA_INSTALLING: html += "Installing..."; break;
+                case OTA_SUCCESS: html += "Update Successful"; break;
+                case OTA_FAILED: html += "Check Failed"; break;
+                default: html += "Unknown";
+            }
+        }
+        html += "</td><td>Current update status</td></tr>";
+        
+        if (otaStatus.updateAvailable && !otaStatus.latestVersion.isEmpty()) {
+            html += "<tr><td>Latest Version</td><td class='value' style='color: #e74c3c; font-weight: bold;'>" + otaStatus.latestVersion + "</td><td>Available firmware update</td></tr>";
+        }
+        
+        if (!otaStatus.message.isEmpty()) {
+            String messageStyle = "";
+            if (otaStatus.status == OTA_FAILED) {
+                messageStyle = "style='color: #e74c3c;'";
+            } else if (otaStatus.updateAvailable) {
+                messageStyle = "style='color: #f39c12;'";
+            }
+            html += "<tr><td>Last Check Result</td><td class='value' " + messageStyle + ">" + otaStatus.message + "</td><td>Result of most recent update check</td></tr>";
+        }
+    } else {
+        html += "<tr><td>WiFi Status</td><td class='value' style='color: #f39c12;'>Disconnected</td><td>Connect to WiFi to enable automatic update checks</td></tr>";
+    }
+    
+    html += "</table>";
+    
+    // Auto-install checkbox
+    html += "<div style='margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px;'>";
+    html += "<form id='autoInstallForm' style='margin: 0;'>";
+    html += "<label style='cursor: pointer; display: flex; align-items: center; gap: 8px;'>";
+    html += "<input type='checkbox' id='autoInstall' name='autoInstall' ";
+    if (otaManager.getAutoInstall()) {
+        html += "checked ";
+    }
+    html += "onchange='saveAutoInstall()' style='width: 18px; height: 18px; cursor: pointer;'>";
+    html += "<span><strong>Auto-install updates</strong> - Automatically install new firmware when detected</span>";
+    html += "</label></form></div>";
 
     html += buildHTMLFooter();
 
@@ -470,7 +560,7 @@ esp_err_t WebServerManager::handleRegisters(httpd_req_t *req) {
     html += "<div class='card'>";
     html += "<h3>SF6 Manual Control</h3>";
     html += "<form onsubmit='return submitSF6Values();'>";
-    html += "<label>Density (kg/m³):</label><input type='number' id='density-input' step='0.01' value='" + String(sf6Emulator.getDensity(), 2) + "'>";
+    html += "<label>Density (kg/m&sup3;):</label><input type='number' id='density-input' step='0.01' value='" + String(sf6Emulator.getDensity(), 2) + "'>";
     html += "<label>Pressure (kPa):</label><input type='number' id='pressure-input' step='0.1' value='" + String(sf6Emulator.getPressure(), 1) + "'>";
     html += "<label>Temperature (K):</label><input type='number' id='temperature-input' step='0.1' value='" + String(sf6Emulator.getTemperature(), 1) + "'>";
     html += "<button type='submit'>Update</button> <button type='button' onclick='resetSF6Values()'>Reset</button>";
@@ -478,20 +568,45 @@ esp_err_t WebServerManager::handleRegisters(httpd_req_t *req) {
 
     // Holding Registers
     HoldingRegisters& holding = modbusHandler.getHoldingRegisters();
-    html += "<h2>Holding Registers (0-12)</h2>";
-    html += "<table><tr><th>Addr</th><th>Value</th><th>Description</th></tr>";
-    html += "<tr><td>0</td><td>" + String(holding.sequential_counter) + "</td><td>Sequential Counter</td></tr>";
-    html += "<tr><td>1</td><td>" + String(holding.random_number) + "</td><td>Random Number</td></tr>";
-    html += "<tr><td>9</td><td>" + String(holding.temperature_x10 / 10.0, 1) + " C</td><td>Temperature</td></tr>";
+    html += "<h2>Holding Registers (0-12) - Read/Write</h2>";
+    html += "<table><tr><th>Address</th><th>Value</th><th>Hex</th><th>Description</th></tr>";
+    html += "<tr><td>0</td><td class='value'>" + String(holding.sequential_counter) + "</td><td>0x" + String(holding.sequential_counter, HEX) + "</td><td>Sequential Counter</td></tr>";
+    html += "<tr><td>1</td><td class='value'>" + String(holding.random_number) + "</td><td>0x" + String(holding.random_number, HEX) + "</td><td>Random Number</td></tr>";
+    
+    uint16_t uptime_low = (uint16_t)(holding.uptime_seconds & 0xFFFF);
+    uint16_t uptime_high = (uint16_t)(holding.uptime_seconds >> 16);
+    html += "<tr><td>2</td><td class='value'>" + String(uptime_low) + "</td><td>0x" + String(uptime_low, HEX) + "</td><td>Uptime (low word)</td></tr>";
+    html += "<tr><td>3</td><td class='value'>" + String(uptime_high) + "</td><td>0x" + String(uptime_high, HEX) + "</td><td>Uptime (high word) = <strong>" + String(holding.uptime_seconds) + " seconds</strong></td></tr>";
+
+    uint32_t total_heap = ((uint32_t)holding.free_heap_kb_high << 16) | holding.free_heap_kb_low;
+    html += "<tr><td>4</td><td class='value'>" + String(holding.free_heap_kb_low) + "</td><td>0x" + String(holding.free_heap_kb_low, HEX) + "</td><td>Free Heap (low word)</td></tr>";
+    html += "<tr><td>5</td><td class='value'>" + String(holding.free_heap_kb_high) + "</td><td>0x" + String(holding.free_heap_kb_high, HEX) + "</td><td>Free Heap (high word) = <strong>" + String(total_heap) + " KB total</strong></td></tr>";
+    html += "<tr><td>6</td><td class='value'>" + String(holding.min_heap_kb) + "</td><td>0x" + String(holding.min_heap_kb, HEX) + "</td><td>Min Free Heap (KB)</td></tr>";
+    html += "<tr><td>7</td><td class='value'>" + String(holding.cpu_freq_mhz) + "</td><td>0x" + String(holding.cpu_freq_mhz, HEX) + "</td><td>CPU Frequency (MHz)</td></tr>";
+    html += "<tr><td>8</td><td class='value'>" + String(holding.task_count) + "</td><td>0x" + String(holding.task_count, HEX) + "</td><td>FreeRTOS Tasks</td></tr>";
+    html += "<tr><td>9</td><td class='value'>" + String(holding.temperature_x10) + "</td><td>0x" + String(holding.temperature_x10, HEX) + "</td><td>Temperature = <strong>" + String(holding.temperature_x10 / 10.0, 1) + " C</strong></td></tr>";
+    html += "<tr><td>10</td><td class='value'>" + String(holding.cpu_cores) + "</td><td>0x" + String(holding.cpu_cores, HEX) + "</td><td>CPU Cores</td></tr>";
+    html += "<tr><td>11</td><td class='value'>" + String(holding.wifi_enabled) + "</td><td>0x" + String(holding.wifi_enabled, HEX) + "</td><td>WiFi AP Enabled</td></tr>";
+    html += "<tr><td>12</td><td class='value'>" + String(holding.wifi_clients) + "</td><td>0x" + String(holding.wifi_clients, HEX) + "</td><td>WiFi Clients</td></tr>";
     html += "</table>";
 
     // Input Registers
     InputRegisters& input = modbusHandler.getInputRegisters();
-    html += "<h2>Input Registers (SF6 Sensor)</h2>";
-    html += "<table><tr><th>Addr</th><th>Raw</th><th>Scaled</th><th>Description</th></tr>";
-    html += "<tr><td>0</td><td>" + String(input.sf6_density) + "</td><td>" + String(input.sf6_density / 100.0, 2) + " kg/m³</td><td>SF6 Density</td></tr>";
-    html += "<tr><td>1</td><td>" + String(input.sf6_pressure_20c) + "</td><td>" + String(input.sf6_pressure_20c / 10.0, 1) + " kPa</td><td>SF6 Pressure @20C</td></tr>";
-    html += "<tr><td>2</td><td>" + String(input.sf6_temperature) + "</td><td>" + String(input.sf6_temperature / 10.0, 1) + " K</td><td>SF6 Temperature</td></tr>";
+    html += "<h2>Input Registers (0-8) - Read Only (SF6 Sensor)</h2>";
+    html += "<table><tr><th>Address</th><th>Raw Value</th><th>Scaled Value</th><th>Description</th></tr>";
+    html += "<tr><td>0</td><td class='value'>" + String(input.sf6_density) + "</td><td>" + String(input.sf6_density / 100.0, 2) + " kg/m&sup3;</td><td>SF6 Density</td></tr>";
+    html += "<tr><td>1</td><td class='value'>" + String(input.sf6_pressure_20c) + "</td><td>" + String(input.sf6_pressure_20c / 10.0, 1) + " kPa</td><td>SF6 Pressure @20C</td></tr>";
+    html += "<tr><td>2</td><td class='value'>" + String(input.sf6_temperature) + "</td><td>" + String(input.sf6_temperature / 10.0, 1) + " K (" + String(input.sf6_temperature / 10.0 - 273.15, 1) + "C)</td><td>SF6 Temperature</td></tr>";
+    html += "<tr><td>3</td><td class='value'>" + String(input.sf6_pressure_var) + "</td><td>" + String(input.sf6_pressure_var / 10.0, 1) + " kPa</td><td>SF6 Pressure Variance</td></tr>";
+    html += "<tr><td>4</td><td class='value'>" + String(input.slave_id) + "</td><td>-</td><td>Slave ID</td></tr>";
+
+    uint32_t serial = ((uint32_t)input.serial_hi << 16) | input.serial_lo;
+    html += "<tr><td>5</td><td class='value'>" + String(input.serial_hi) + "</td><td>0x" + String(input.serial_hi, HEX) + "</td><td>Serial Number (high)</td></tr>";
+    html += "<tr><td>6</td><td class='value'>" + String(input.serial_lo) + "</td><td>0x" + String(input.serial_lo, HEX) + "</td><td>Serial Number (low) = <strong>0x" + String(serial, HEX) + "</strong></td></tr>";
+    char version_buf[10];
+    snprintf(version_buf, sizeof(version_buf), "v%d.%02d", input.sw_release / 100, input.sw_release % 100);
+    html += "<tr><td>7</td><td class='value'>" + String(input.sw_release) + "</td><td>" + String(version_buf) + "</td><td>Software Version</td></tr>";
+    html += "<tr><td>8</td><td class='value'>" + String(input.quartz_freq) + "</td><td>" + String(input.quartz_freq / 100.0, 2) + " Hz</td><td>Quartz Frequency</td></tr>";
     html += "</table>";
 
     html += buildHTMLFooter();
@@ -511,7 +626,7 @@ esp_err_t WebServerManager::handleLoRaWAN(httpd_req_t *req) {
     // Network status
     html += "<h2>Network Status</h2>";
     html += "<table><tr><th>Parameter</th><th>Value</th></tr>";
-    html += "<tr><td>Connection Status</td><td style='background:" + String(lorawanHandler.isJoined() ? "#d4edda" : "#f8d7da") + ";font-weight:bold;'>" + String(lorawanHandler.isJoined() ? "JOINED" : "NOT JOINED") + "</td></tr>";
+    html += "<tr><td>Connection Status</td><td style='background:" + String(lorawanHandler.isJoined() ? "#1e5631" : "#5c2626") + ";color:#fff;font-weight:bold;'>" + String(lorawanHandler.isJoined() ? "JOINED" : "NOT JOINED") + "</td></tr>";
     if (lorawanHandler.isJoined()) {
         html += "<tr><td>DevAddr</td><td>0x" + String(lorawanHandler.getDevAddr(), HEX) + "</td></tr>";
     }
@@ -528,7 +643,7 @@ esp_err_t WebServerManager::handleLoRaWAN(httpd_req_t *req) {
         html += "<table><tr><th>Parameter</th><th>Value</th></tr>";
         html += "<tr><td>Profile</td><td>" + String(active_idx) + " - " + String(active_prof->name) + "</td></tr>";
         html += "</table>";
-        html += "<p><a href='/lorawan/profiles' style='background:#3498db;color:white;padding:10px;text-decoration:none;border-radius:5px;'>Manage Profiles →</a></p>";
+        html += "<p><a href='/lorawan/profiles' style='background:#3498db;color:white;padding:10px;text-decoration:none;border-radius:5px;'>Manage Profiles &raquo;</a></p>";
     }
 
     // Current credentials
@@ -582,7 +697,7 @@ esp_err_t WebServerManager::handleLoRaWANProfiles(httpd_req_t *req) {
     // Auto-rotation
     bool auto_rotate = lorawanHandler.getAutoRotation();
     int enabled_count = lorawanHandler.getEnabledProfileCount();
-    html += "<div class='card' style='background:#d5f4e6;border:2px solid #27ae60;'>";
+    html += "<div class='card' style='background:#1e5631;border:2px solid #27ae60;color:#fff;'>";
     html += "<h3>Auto-Rotation</h3>";
     html += "<p>Status: <strong>" + String(auto_rotate ? "ENABLED" : "DISABLED") + "</strong> | Enabled profiles: " + String(enabled_count) + "</p>";
     html += "<label><input type='checkbox' " + String(auto_rotate ? "checked" : "") + " " + String(enabled_count < 2 ? "disabled" : "") + " onchange='toggleAutoRotate(this.checked)'> Enable Auto-Rotation</label>";
@@ -746,7 +861,7 @@ esp_err_t WebServerManager::handleOTA(httpd_req_t *req) {
     html += "    btn.disabled=false;\n";
     html += "    btn.innerHTML='Check for Updates';\n";
     html += "    if(data.error) status.innerHTML='<div class=\"warning\">'+data.error+'</div>';\n";
-    html += "    else if(data.updateAvailable) status.innerHTML='<div class=\"card\" style=\"background:#d4edda;border-color:#27ae60;\"><strong>Update available!</strong><br>Current: '+data.currentVersion+'<br>Latest: '+data.latestVersion+'<br><br><button onclick=\"startUpdate()\">Install Update</button></div>';\n";
+    html += "    else if(data.updateAvailable) status.innerHTML='<div class=\"card\" style=\"background:#1e5631;border-color:#27ae60;color:#fff;\"><strong>Update available!</strong><br>Current: '+data.currentVersion+'<br>Latest: '+data.latestVersion+'<br><br><button onclick=\"startUpdate()\">Install Update</button></div>';\n";
     html += "    else status.innerHTML='<div class=\"card\">Up to date: '+data.currentVersion+'</div>';\n";
     html += "  }).catch(function(e){ btn.disabled=false; btn.innerHTML='Check for Updates'; });\n";
     html += "}\n";
@@ -762,7 +877,7 @@ esp_err_t WebServerManager::handleOTA(httpd_req_t *req) {
     html += "function checkProgress(){\n";
     html += "  fetch('/ota/status').then(function(r){return r.json();}).then(function(data){\n";
     html += "    var status = document.getElementById('updateStatus');\n";
-    html += "    if(data.status==='success'){ status.innerHTML='<div class=\"card\" style=\"background:#d4edda;\">Update complete! Rebooting...</div>'; setTimeout(function(){location.reload();},15000); }\n";
+    html += "    if(data.status==='success'){ status.innerHTML='<div class=\"card\" style=\"background:#1e5631;color:#fff;\">Update complete! Rebooting...</div>'; setTimeout(function(){location.reload();},15000); }\n";
     html += "    else if(data.status==='failed') status.innerHTML='<div class=\"warning\">Failed: '+data.message+'</div>';\n";
     html += "    else status.innerHTML='<div class=\"card\">Progress: '+data.progress+'%<br>'+data.message+'</div>';\n";
     html += "  });\n";
