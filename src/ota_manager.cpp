@@ -72,6 +72,31 @@ uint8_t OTAManager::getUpdateCheckInterval() {
     return interval;
 }
 
+void OTAManager::setAutoInstall(bool enabled) {
+    Preferences prefs;
+    if (prefs.begin("ota", false)) {  // false = read-write
+        prefs.putBool("auto_install", enabled);
+        prefs.end();
+        Serial.printf("[OTA] Auto-install %s\n", enabled ? "enabled" : "disabled");
+    } else {
+        Serial.println("[OTA] Failed to save auto-install setting to preferences");
+    }
+}
+
+bool OTAManager::getAutoInstall() {
+    Preferences prefs;
+    bool enabled = false;  // Default to disabled for safety
+    
+    if (prefs.begin("ota", false)) {  // false = read-write, creates namespace if needed
+        enabled = prefs.getBool("auto_install", false);
+        prefs.end();
+    } else {
+        Serial.println("[OTA] Failed to open preferences, auto-install disabled");
+    }
+    
+    return enabled;
+}
+
 String OTAManager::getCurrentVersion() {
     char version[16];
     snprintf(version, sizeof(version), "v%d.%02d", FIRMWARE_VERSION / 100, FIRMWARE_VERSION % 100);

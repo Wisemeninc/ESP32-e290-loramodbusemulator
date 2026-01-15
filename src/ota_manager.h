@@ -69,6 +69,10 @@ public:
     void setUpdateCheckInterval(uint8_t minutes);
     uint8_t getUpdateCheckInterval();
     
+    // Auto-install when update found
+    void setAutoInstall(bool enabled);
+    bool getAutoInstall();
+    
 private:
     OTAResult result;
     String githubToken;

@@ -215,6 +215,13 @@ void loop() {
                 otaManager.checkForUpdate();
             }
         }
+        
+        // Auto-install if enabled and update available
+        OTAResult otaStatus = otaManager.getStatus();
+        if (otaStatus.updateAvailable && otaManager.getAutoInstall() && !otaManager.isUpdating()) {
+            Serial.println("[AUTO] Update available and auto-install enabled - starting update...");
+            otaManager.startUpdate();
+        }
     }
 
     // Handle LoRaWAN Uplinks (Auto-rotation and periodic sending)

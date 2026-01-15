@@ -107,6 +107,7 @@ void WebServerManager::setupRoutes() {
     ResourceNode * nodeOTACheck = new ResourceNode("/ota/check", "GET", &handleOTACheck);
     ResourceNode * nodeOTAStart = new ResourceNode("/ota/start", "GET", &handleOTAStart);
     ResourceNode * nodeOTAStatus = new ResourceNode("/ota/status", "GET", &handleOTAStatus);
+    ResourceNode * nodeOTAAutoInstall = new ResourceNode("/ota/auto-install", "GET", &handleOTAAutoInstall);
 
     server->registerNode(nodeRoot);
     server->registerNode(nodeStats);
@@ -138,6 +139,7 @@ void WebServerManager::setupRoutes() {
     server->registerNode(nodeOTACheck);
     server->registerNode(nodeOTAStart);
     server->registerNode(nodeOTAStatus);
+    server->registerNode(nodeOTAAutoInstall);
     
     // Redirect server routes
     ResourceNode * nodeRedirect = new ResourceNode("/*", "GET", &handleRedirect);
@@ -479,6 +481,31 @@ void WebServerManager::handleStats(HTTPRequest * req, HTTPResponse * res) {
     }
     
     res->print("</table>");
+    
+    // Auto-install checkbox
+    res->print("<div style='margin-top: 15px; padding: 10px; background: #f8f9fa; border-radius: 5px;'>");
+    res->print("<form id='autoInstallForm' style='margin: 0;'>");
+    res->print("<label style='cursor: pointer; display: flex; align-items: center; gap: 8px;'>");
+    res->print("<input type='checkbox' id='autoInstall' name='autoInstall' ");
+    if (otaManager.getAutoInstall()) {
+        res->print("checked ");
+    }
+    res->print("onchange='saveAutoInstall()' style='width: 18px; height: 18px; cursor: pointer;'>");
+    res->print("<span>🔄 <strong>Auto-install updates</strong> - Automatically install new firmware when detected</span>");
+    res->print("</label>");
+    res->print("</form>");
+    res->print("</div>");
+    
+    // JavaScript for saving auto-install setting
+    res->print("<script>");
+    res->print("function saveAutoInstall() {");
+    res->print("  var enabled = document.getElementById('autoInstall').checked;");
+    res->print("  fetch('/ota/auto-install?enabled=' + (enabled ? '1' : '0'))");
+    res->print("    .then(r => r.json())");
+    res->print("    .then(d => { if(d.success) console.log('Auto-install ' + (enabled ? 'enabled' : 'disabled')); })");
+    res->print("    .catch(e => console.error('Failed to save setting'));");
+    res->print("}");
+    res->print("</script>");
 
     res->print(FPSTR(HTML_FOOTER));
 }
@@ -1600,4 +1627,24 @@ void WebServerManager::handleOTAStatus(HTTPRequest * req, HTTPResponse * res) {
     json += "}";
     
     res->print(json);
+}
+
+void WebServerManager::handleOTAAutoInstall(HTTPRequest * req, HTTPResponse * res) {
+    if (!authManager.checkAuthentication(req, res)) return;
+    
+    res->setHeader("Content-Type", "application/json");
+    
+    // Get enabled parameter from query string
+    auto params = req->getParams();
+    std::string enabledStr;
+    
+    if (params->getQueryParameter("enabled", enabledStr)) {
+        bool enabled = (enabledStr == "1" || enabledStr == "true");
+        otaManager.setAutoInstall(enabled);
+        res->print("{\"success\":true,\"enabled\":" + String(enabled ? "true" : "false") + "}");
+    } else {
+        // Just return current state if no parameter
+        bool enabled = otaManager.getAutoInstall();
+        res->print("{\"success\":true,\"enabled\":" + String(enabled ? "true" : "false") + "}");
+    }
 }

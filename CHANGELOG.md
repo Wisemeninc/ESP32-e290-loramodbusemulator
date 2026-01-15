@@ -5,6 +5,12 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.95] - 2026-01-15
+
+### Added
+- Auto-install firmware updates option - checkbox on Statistics page under Firmware Updates
+- When enabled, device automatically installs new firmware when detected
+
 ## [1.94] - 2026-01-14
 
 ### Changed

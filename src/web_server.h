@@ -84,6 +84,7 @@ private:
     static void handleOTACheck(HTTPRequest * req, HTTPResponse * res);
     static void handleOTAStart(HTTPRequest * req, HTTPResponse * res);
     static void handleOTAStatus(HTTPRequest * req, HTTPResponse * res);
+    static void handleOTAAutoInstall(HTTPRequest * req, HTTPResponse * res);
 };
 
 // Global instance
