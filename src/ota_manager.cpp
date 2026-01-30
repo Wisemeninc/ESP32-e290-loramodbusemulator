@@ -179,13 +179,6 @@ bool OTAManager::isUpdating() {
 }
 
 String OTAManager::makeGitHubApiRequest(const String& endpoint) {
-    if (!hasToken()) {
-        Serial.println("[OTA] No GitHub token configured");
-        return "";
-    }
-    
-    Serial.println("[OTA] Using token: " + githubToken.substring(0, 10) + "..." + githubToken.substring(githubToken.length() - 4));
-    
     WiFiClientSecure client;
     // For testing: skip certificate verification (INSECURE but works around cert issues)
     // TODO: Use proper root CA once working
@@ -202,7 +195,13 @@ String OTAManager::makeGitHubApiRequest(const String& endpoint) {
         return "";
     }
     
-    http.addHeader("Authorization", "Bearer " + githubToken);
+    // Add authentication header only if token is configured (optional for public repos)
+    if (hasToken()) {
+        Serial.println("[OTA] Using token: " + githubToken.substring(0, 10) + "..." + githubToken.substring(githubToken.length() - 4));
+        http.addHeader("Authorization", "Bearer " + githubToken);
+    } else {
+        Serial.println("[OTA] No token configured - using public access");
+    }
     http.addHeader("Accept", "application/vnd.github.v3+json");
     http.addHeader("User-Agent", "ESP32-OTA-Updater");
     http.setTimeout(15000);  // 15 second HTTP timeout
@@ -226,12 +225,6 @@ String OTAManager::makeGitHubApiRequest(const String& endpoint) {
 void OTAManager::checkForUpdate() {
     if (isUpdating()) {
         Serial.println("[OTA] Update already in progress");
-        return;
-    }
-    
-    if (!hasToken()) {
-        result.status = OTA_FAILED;
-        result.message = "GitHub token not configured";
         return;
     }
     
@@ -262,7 +255,7 @@ void OTAManager::checkForUpdate() {
         
         if (response.length() == 0) {
             result.status = OTA_FAILED;
-            result.message = "Failed to check for updates. Check token and network.";
+            result.message = "Failed to check for updates. Check network connection.";
             return;
         }
     }
@@ -483,8 +476,10 @@ bool OTAManager::downloadAndInstall(const String& url) {
         return false;
     }
     
-    // Add authentication headers
-    http.addHeader("Authorization", "Bearer " + githubToken);
+    // Add authentication header only if token is configured (optional for public repos)
+    if (hasToken()) {
+        http.addHeader("Authorization", "Bearer " + githubToken);
+    }
     http.addHeader("User-Agent", "ESP32-OTA-Updater");
     
     // For asset downloads, we need to accept octet-stream

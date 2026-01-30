@@ -5,6 +5,20 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.00] - 2026-01-30
+
+### Changed
+- **Repository is now PUBLIC** - No GitHub Personal Access Token required for OTA updates
+- Removed hardcoded PAT from config.h (security improvement)
+- OTA manager now works without authentication for public repos
+- Token is now optional - only needed for higher API rate limits
+- Replaced strcpy with strncpy for safer string handling in WiFi manager
+
+## [1.99] - 2026-01-15
+
+### Changed
+- Replaced strcpy with strncpy for safer string handling in WiFi manager
+
 ## [1.98] - 2026-01-15
 
 ### Changed

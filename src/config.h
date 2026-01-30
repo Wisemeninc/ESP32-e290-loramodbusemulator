@@ -9,7 +9,7 @@
 // Format: MMmm where MM = major version, mm = minor version (2 digits)
 // Examples: 111 = v1.11, 203 = v2.03, 1545 = v15.45
 // Display format: v(FIRMWARE_VERSION/100).(FIRMWARE_VERSION%100)
-#define FIRMWARE_VERSION 199  // v1.99
+#define FIRMWARE_VERSION 200  // v2.00
 
 // ============================================================================
 // DEPLOYMENT CONFIGURATION
@@ -94,14 +94,13 @@ const unsigned long WIFI_TIMEOUT_MS = 20 * 60 * 1000;  // 20 minutes
 // ============================================================================
 // OTA UPDATE CONFIGURATION
 // ============================================================================
-// GitHub Personal Access Token for OTA updates from private repository
-// Generate at: GitHub → Settings → Developer settings → Personal access tokens
-// Required scope: "repo" (Full control of private repositories)
-// Leave empty to configure via web interface instead
-#define GITHUB_PAT "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"
+// GitHub repository is PUBLIC - no Personal Access Token required
+// Token can still be configured via web interface if needed for rate limiting
+// Leave empty for public repository access (recommended)
+#define GITHUB_PAT ""
 
-// Set to true to prefer the hardcoded token over the web-configured one
-#define GITHUB_PAT_PREFER_HARDCODED true
+// Set to false for public repositories (token not needed)
+#define GITHUB_PAT_PREFER_HARDCODED false
 
 // Automatic update checking configuration
 #define AUTO_UPDATE_CHECK_INTERVAL_MINUTES 60  // Check for updates every 5 minutes (debug), use 1440 for production (1 day)

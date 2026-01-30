@@ -4,7 +4,7 @@ This project implements a full-featured Modbus RTU slave on the **Heltec Vision 
 
 **Framework:** Arduino (via PlatformIO)
 **Platform:** Espressif32 (ESP32-S3)
-**Current Version:** v1.98
+**Current Version:** v2.00
 
 **Key Highlights:**
 - 🔧 **13 Holding Registers** with ESP32 system metrics (CPU, memory, WiFi status)
@@ -301,26 +301,22 @@ Edit `src/config.h`:
 
 ## OTA Firmware Updates
 
-The device supports Over-The-Air (OTA) firmware updates from the private GitHub repository:
+The device supports Over-The-Air (OTA) firmware updates from the public GitHub repository:
 
 ### Features
 - **Automatic Update Checking**: Compare current firmware version with latest GitHub releases
-- **Secure Downloads**: Uses GitHub Personal Access Token for private repository access
+- **Public Repository Access**: No authentication required for public repositories
 - **Progress Tracking**: Real-time download and installation progress display
 - **Version Verification**: Semantic version comparison (vX.YY format)
 - **Safe Updates**: Verification and rollback protection
 
 ### Configuration
 
-1. **GitHub Token**: Configure in `src/config.h`:
-   ```cpp
-   #define GITHUB_PAT "ghp_your_token_here"
-   #define GITHUB_PAT_PREFER_HARDCODED true
-   ```
+The repository is public, so no GitHub token is required. The device will automatically check for updates from the releases page.
 
-2. **Token Permissions**: GitHub PAT requires `repo` scope for private repository access
+**Optional**: For higher API rate limits, you can configure a GitHub token via the web interface (Update tab).
 
-3. **Release Format**: GitHub releases must include a compiled `firmware.bin` file as an asset
+**Release Format**: GitHub releases must include a compiled `firmware.bin` file as an asset.
 
 ### Usage
 
