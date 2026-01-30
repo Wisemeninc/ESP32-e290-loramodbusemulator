@@ -1,4 +1,4 @@
-# Vision Master E290 Modbus RTU Slave with HW-519
+# Vision Master E290 Modbus RTU Slave with HW-519 aka NiceDevice
 
 This project implements a full-featured Modbus RTU slave on the **Heltec Vision Master E290** (ESP32-S3R8 with E-Ink display and LoRa) using the HW-519 RS485 module. Perfect for testing SCADA systems, HMI applications, or learning Modbus protocol.
 
