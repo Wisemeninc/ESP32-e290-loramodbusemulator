@@ -5,6 +5,19 @@ All notable changes to the ESP32-e290-loramodbusemulator project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.02] - 2026-01-30
+
+### Changed
+- Test release for OTA update verification
+
+## [2.01] - 2026-01-30
+
+### Fixed
+- **OTA Update Detection**: Fixed `startUpdate()` still requiring GitHub token
+  - Devices running older firmware couldn't detect v2.00+ releases
+  - Removed `hasToken()` check from `startUpdate()` function
+  - All OTA functions now work without authentication for public repositories
+
 ## [2.00] - 2026-01-30
 
 ### Changed
