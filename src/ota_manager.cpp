@@ -346,12 +346,6 @@ void OTAManager::startUpdate() {
         return;
     }
     
-    if (!hasToken()) {
-        result.status = OTA_FAILED;
-        result.message = "GitHub token not configured";
-        return;
-    }
-    
     // Start OTA task on Core 1 to avoid competing with WebServerTask on Core 0
     taskRunning = true;
     xTaskCreatePinnedToCore(
